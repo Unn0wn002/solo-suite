@@ -1,0 +1,21 @@
+{
+  "name": "git",
+  "version": "1.0.0",
+  "description": "Git & repository workflow for solo devs: safe branches, clean commits, PR review, release notes, and GitHub issue sync. Skill: git-workflow-manager. Commands: /git:create-branch, /git:commit-plan, /git:pr-review, /git:release-notes, /git:sync-issues. Proposes and confirms before any write; never runs destructive git.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "git",
+    "branch",
+    "commit",
+    "pr",
+    "pull-request",
+    "review",
+    "release-notes",
+    "github",
+    "issues",
+    "version-control",
+    "solo"
+  ]
+}

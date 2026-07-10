@@ -1,0 +1,7 @@
+{
+  "name": "design",
+  "version": "1.0.0",
+  "description": "Design for solo developers: UX flows, UI review, and a lightweight component system. UI/UX-designer skill; complements site-doctor's accessibility, mobile, and forms audits.",
+  "author": { "name": "Ayaya" },
+  "keywords": ["design", "ux", "ui", "usability", "component-system", "design-tokens", "solo"]
+}

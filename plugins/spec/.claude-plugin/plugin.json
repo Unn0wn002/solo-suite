@@ -1,0 +1,19 @@
+{
+  "name": "spec",
+  "version": "1.0.1",
+  "description": "Spec & planning: turn rough ideas into clear briefs, testable acceptance criteria, and API/data/env contracts before you build. Skills: acceptance-criteria-writer, api-contract-designer. Commands: /spec:feature-brief, /spec:acceptance, /spec:api-contract, /spec:data-contract, /spec:env-contract.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "spec",
+    "planning",
+    "acceptance-criteria",
+    "feature-brief",
+    "api-contract",
+    "data-contract",
+    "env-contract",
+    "requirements",
+    "solo"
+  ]
+}

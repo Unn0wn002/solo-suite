@@ -1,0 +1,300 @@
+{
+  "name": "solo-suite",
+  "owner": {
+    "name": "Ayaya"
+  },
+  "metadata": {
+    "description": "The complete solo developer system: a full product team, a production audit/debug/fix toolkit (site-doctor), a stack-aware layer, and a workflow layer (git, spec, repo intelligence, security, browser QA, quality gates, AI-agent orchestration, growth), unified by the standard 16-file .solo/ project memory that can sync out to Obsidian and Grafana. 17 plugins, 56 skills, 100 slash commands, 10 stdlib helper scripts covering intake -> spec -> plan -> design -> build -> review -> test -> browser-QA -> audit -> gate -> release -> operate -> document -> sync, with /solo:full-team-dev running the whole cycle, /solo:self-check verifying the suite, strict evidence-based gates with 0-100 launch scoring, and two-mode (connector/manual) vendor audits for Cloudflare, Vercel, Supabase, tags, and payments.",
+    "version": "1.0.10",
+    "plugins": 17,
+    "skills": 56,
+    "commands": 100,
+    "scripts": 10
+  },
+  "plugins": [
+    {
+      "name": "solo",
+      "source": "./plugins/solo",
+      "description": "The heart of the solo workflow: persistent project memory across sessions, syncing it outward, self-checking the whole suite, and orchestrating the full team. Skills: project-memory-manager (owns the standard 16-file .solo/ contract), memory-sync (Obsidian + Grafana), suite-integrity (mechanical self-check with a stdlib script). Commands: /solo:start-session, /solo:end-session, /solo:run-cycle, /solo:full-team-dev (idea \u2192 production, gates enforced), /solo:handoff-memory, /solo:next-step, /solo:project-status, /solo:self-check, /solo:sync-obsidian, /solo:sync-grafana.",
+      "category": "workflow",
+      "tags": [
+        "memory",
+        "handoff",
+        "session",
+        "start-session",
+        "end-session",
+        "run-cycle",
+        "sync",
+        "obsidian",
+        "grafana",
+        "solo",
+        "workflow"
+      ]
+    },
+    {
+      "name": "stack",
+      "source": "./plugins/stack",
+      "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:connector-check, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names \u2014 never secrets) and states which it used.",
+      "category": "development",
+      "tags": [
+        "stack",
+        "intake",
+        "cloudflare",
+        "vercel",
+        "supabase",
+        "analytics",
+        "tags",
+        "payments",
+        "stripe",
+        "vendor-audit",
+        "solo"
+      ]
+    },
+    {
+      "name": "project",
+      "source": "./plugins/project",
+      "description": "Planning: PRD, architecture, task breakdown. Commands: /project:prd, /project:architecture, /project:task-breakdown. Skills: product-manager, software-architect.",
+      "category": "planning",
+      "tags": [
+        "planning",
+        "prd",
+        "architecture",
+        "tasks",
+        "solo"
+      ]
+    },
+    {
+      "name": "design",
+      "source": "./plugins/design",
+      "description": "Design: UX flows, UI review, component system. Commands: /design:ui-review, /design:ux-flow, /design:component-system. Skill: ui-ux-designer.",
+      "category": "design",
+      "tags": [
+        "design",
+        "ux",
+        "ui",
+        "component-system",
+        "solo"
+      ]
+    },
+    {
+      "name": "dev",
+      "source": "./plugins/dev",
+      "description": "Development: build features, fix bugs, refactor, review code. Commands: /dev:implement-feature, /dev:fix-bug, /dev:refactor-code, /dev:code-review. Skills: fullstack-developer, code-reviewer.",
+      "category": "development",
+      "tags": [
+        "development",
+        "bug-fix",
+        "refactor",
+        "code-review",
+        "solo"
+      ]
+    },
+    {
+      "name": "test",
+      "source": "./plugins/test",
+      "description": "Testing: unit, integration, e2e, edge cases. Commands: /test:unit, /test:integration, /test:e2e, /test:edge-cases. Skill: qa-engineer.",
+      "category": "testing",
+      "tags": [
+        "testing",
+        "qa",
+        "e2e",
+        "edge-cases",
+        "solo"
+      ]
+    },
+    {
+      "name": "release",
+      "source": "./plugins/release",
+      "description": "Release: preflight, deploy plan, rollback plan, CI setup - drives site-doctor's deep checks when installed. Commands: /release:preflight, /release:deploy-plan, /release:rollback-plan, /release:ci-setup. Skills: devops-engineer, security-reviewer.",
+      "category": "devops",
+      "tags": [
+        "release",
+        "deployment",
+        "devops",
+        "rollback",
+        "security",
+        "solo"
+      ]
+    },
+    {
+      "name": "docs",
+      "source": "./plugins/docs",
+      "description": "Documentation for solo developers: README/docs upkeep, API docs, and a followable setup guide. Documentation-writer skill that keeps docs matched to code reality. Commands: /docs:update, /docs:api, /docs:setup-guide, /docs:runbook.",
+      "category": "documentation",
+      "tags": [
+        "documentation",
+        "readme",
+        "api-docs",
+        "setup-guide",
+        "solo"
+      ]
+    },
+    {
+      "name": "site-doctor",
+      "source": "./plugins/site-doctor",
+      "description": "Production toolkit: 26 audit/debug/fix skills for websites and databases - security (OWASP), SEO, performance, accessibility, API, observability, infrastructure, deployment, cost, backups, compliance, data migration, mobile, content, analytics, load testing, incident response, dependencies, email deliverability, forms. 24 commands, 8 stdlib scripts. Reads/writes .solo/ memory: audit fix-lists become tasks.",
+      "category": "development",
+      "tags": [
+        "audit",
+        "debug",
+        "security",
+        "seo",
+        "performance",
+        "accessibility",
+        "api",
+        "observability",
+        "infrastructure",
+        "devops",
+        "compliance",
+        "database",
+        "monitoring",
+        "production"
+      ]
+    },
+    {
+      "name": "git",
+      "source": "./plugins/git",
+      "description": "Git & repository workflow for solo devs: safe branches, clean commits, PR review, release notes, and GitHub issue sync. Skill: git-workflow-manager. Commands: /git:create-branch, /git:commit-plan, /git:pr-review, /git:release-notes, /git:sync-issues. Proposes and confirms before any write; never runs destructive git.",
+      "category": "workflow",
+      "tags": [
+        "git",
+        "branch",
+        "commit",
+        "pr",
+        "pull-request",
+        "review",
+        "release-notes",
+        "github",
+        "issues",
+        "version-control",
+        "solo"
+      ]
+    },
+    {
+      "name": "spec",
+      "source": "./plugins/spec",
+      "description": "Spec & planning: turn rough ideas into clear briefs, testable acceptance criteria, and API/data/env contracts before you build. Skills: acceptance-criteria-writer, api-contract-designer. Commands: /spec:feature-brief, /spec:acceptance, /spec:api-contract, /spec:data-contract, /spec:env-contract.",
+      "category": "planning",
+      "tags": [
+        "spec",
+        "planning",
+        "acceptance-criteria",
+        "feature-brief",
+        "api-contract",
+        "data-contract",
+        "env-contract",
+        "requirements",
+        "solo"
+      ]
+    },
+    {
+      "name": "repo",
+      "source": "./plugins/repo",
+      "description": "Repo intelligence: understand a codebase before editing it \u2014 structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
+      "category": "analysis",
+      "tags": [
+        "repo",
+        "codebase",
+        "map",
+        "risk",
+        "dependencies",
+        "dead-code",
+        "onboarding",
+        "analysis",
+        "read-only",
+        "solo"
+      ]
+    },
+    {
+      "name": "security",
+      "source": "./plugins/security",
+      "description": "Security plus: threat modeling, role/permission matrices, Supabase RLS testing, secret detection & rotation, and abuse-case analysis. Skill: authz-security-reviewer (pairs with site-doctor's security-review). Commands: /security:threat-model, /security:authz-matrix, /security:secrets-fix, /security:rls-test, /security:abuse-cases.",
+      "category": "security",
+      "tags": [
+        "security",
+        "authorization",
+        "authz",
+        "rls",
+        "supabase",
+        "secrets",
+        "threat-model",
+        "abuse-cases",
+        "owasp",
+        "solo"
+      ]
+    },
+    {
+      "name": "browser",
+      "source": "./plugins/browser",
+      "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test.",
+      "category": "testing",
+      "tags": [
+        "browser",
+        "qa",
+        "testing",
+        "console",
+        "network",
+        "hydration",
+        "responsive",
+        "mobile",
+        "forms",
+        "e2e",
+        "solo"
+      ]
+    },
+    {
+      "name": "gate",
+      "source": "./plugins/gate",
+      "description": "Quality gates that actually block: GO/NO-GO checkpoints with explicit blocker lists before coding, merge, and deploy, plus a production-readiness review that scores 12 categories 0-10 (overall /100) and returns a launch status \u2014 BLOCKED / SAFE TO LAUNCH / LAUNCH WITH WARNINGS \u2014 where hard blockers force BLOCKED regardless of score. Skills: quality-gatekeeper, production-readiness-reviewer. Commands: /gate:before-code, /gate:before-merge, /gate:before-deploy, /gate:production-ready, /gate:score-project.",
+      "category": "quality",
+      "tags": [
+        "gate",
+        "quality",
+        "go-no-go",
+        "before-merge",
+        "before-deploy",
+        "production-ready",
+        "launch",
+        "checklist",
+        "readiness",
+        "solo"
+      ]
+    },
+    {
+      "name": "ai",
+      "source": "./plugins/ai",
+      "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from templates. Skills: ai-output-auditor, agent-room-templates (ships 4 ready-made agentsrooms (validated by scripts/validate_rooms.py)/*.json room files: full-team-website, site-doctor-audit, production-release, bug-fix-loop). Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
+      "category": "ai",
+      "tags": [
+        "ai",
+        "agents",
+        "prompt",
+        "handoff",
+        "review",
+        "hallucination",
+        "model-routing",
+        "claude",
+        "codex",
+        "gemini",
+        "solo"
+      ]
+    },
+    {
+      "name": "growth",
+      "source": "./plugins/growth",
+      "description": "Growth: audit the conversion funnel and find where users drop off and why. Skill: conversion-optimizer (delegates measurement to site-doctor analytics/forms). Command: /growth:conversion-audit.",
+      "category": "growth",
+      "tags": [
+        "growth",
+        "conversion",
+        "cro",
+        "funnel",
+        "drop-off",
+        "activation",
+        "analytics",
+        "forms",
+        "solo"
+      ]
+    }
+  ]
+}

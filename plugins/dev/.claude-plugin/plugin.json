@@ -1,0 +1,16 @@
+{
+  "name": "dev",
+  "version": "1.0.1",
+  "description": "Development for solo developers: implement features, fix bugs by root cause, refactor safely, and review code. Full-stack-developer and code-reviewer skills. Routes deep DB/security/perf work to site-doctor.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "development",
+    "implementation",
+    "bug-fix",
+    "refactor",
+    "code-review",
+    "solo"
+  ]
+}

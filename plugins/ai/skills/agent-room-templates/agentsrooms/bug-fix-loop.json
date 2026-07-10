@@ -1,0 +1,122 @@
+{
+  "schema": "solo-suite/agentroom-v1",
+  "name": "bug-fix-loop",
+  "version": 1,
+  "description": "Reproduce, diagnose, fix, and verify a bug \u2014 looping until it provably stays fixed.",
+  "based_on_room": "Build + QA rooms, looped",
+  "memory_dir": ".solo/",
+  "rules": [
+    "one writer per artifact \u2014 two seats never edit the same .solo/ file or code area in the same stage",
+    "context is explicit \u2014 each seat reads only its listed files, plus .solo/handoff.md",
+    "every seat ends with a handoff checked by /ai:handoff-check before the next stage starts",
+    "route models with /ai:compare-models; audit generated code with /ai:review-output",
+    "no evidence, no finding \u2014 audits follow the evidence-based output format"
+  ],
+  "stages": [
+    [
+      "reproducer"
+    ],
+    [
+      "fixer"
+    ],
+    [
+      "verifier"
+    ],
+    [
+      "gatekeeper"
+    ]
+  ],
+  "seats": [
+    {
+      "id": "reproducer",
+      "role": "Browser QA",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/bugs.md"
+      ],
+      "writes": [
+        ".solo/bugs.md"
+      ],
+      "commands": [
+        "/browser:smoke-test",
+        "/browser:console-errors"
+      ],
+      "deliverable": "Reliable repro steps + evidence (console/network/screens) in .solo/bugs.md",
+      "handoff_to": "fixer",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "fixer",
+      "role": "Debugger/Developer",
+      "model_hint": "strong-coding",
+      "reads": [
+        ".solo/bugs.md",
+        ".solo/architecture.md"
+      ],
+      "writes": [
+        ".solo/decisions.md",
+        ".solo/bugs.md"
+      ],
+      "commands": [
+        "/repo:map",
+        "/dev:fix-bug"
+      ],
+      "deliverable": "Root cause + minimal fix; cause logged to decisions, status updated in bugs",
+      "handoff_to": "verifier",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "verifier",
+      "role": "QA Engineer",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/bugs.md",
+        ".solo/tests.md"
+      ],
+      "writes": [
+        ".solo/tests.md"
+      ],
+      "commands": [
+        "/test:unit",
+        "/test:integration",
+        "/browser:smoke-test"
+      ],
+      "deliverable": "Regression test that fails before / passes after, repro no longer reproduces",
+      "handoff_to": "gatekeeper",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "gatekeeper",
+      "role": "Merge Gatekeeper",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/tests.md",
+        ".solo/bugs.md"
+      ],
+      "writes": [
+        ".solo/tasks.md"
+      ],
+      "commands": [
+        "/ai:review-output",
+        "/gate:before-merge"
+      ],
+      "deliverable": "GO/NO-GO with evidence",
+      "handoff_to": null,
+      "handoff_check": "/ai:handoff-check"
+    }
+  ],
+  "exit_gate": "/gate:before-merge",
+  "exit_criteria": "Bug closed in .solo/bugs.md with a regression test in .solo/tests.md and gate GO",
+  "loop": {
+    "repeat_stages": [
+      [
+        "fixer"
+      ],
+      [
+        "verifier"
+      ]
+    ],
+    "until": "verifier reports PASS and the original repro fails to reproduce",
+    "on_third_failure": "stop and run /ai:repair-cycle on the fixer's prompt before continuing"
+  }
+}

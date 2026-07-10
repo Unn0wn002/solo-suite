@@ -1,0 +1,96 @@
+{
+  "schema": "solo-suite/agentroom-v1",
+  "name": "production-release",
+  "version": 1,
+  "description": "Ship a release safely: preflight, deploy + rollback plans, docs, and the launch gate.",
+  "based_on_room": "Launch Room",
+  "memory_dir": ".solo/",
+  "rules": [
+    "one writer per artifact \u2014 two seats never edit the same .solo/ file or code area in the same stage",
+    "context is explicit \u2014 each seat reads only its listed files, plus .solo/handoff.md",
+    "every seat ends with a handoff checked by /ai:handoff-check before the next stage starts",
+    "route models with /ai:compare-models; audit generated code with /ai:review-output",
+    "no evidence, no finding \u2014 audits follow the evidence-based output format"
+  ],
+  "stages": [
+    [
+      "release"
+    ],
+    [
+      "docs"
+    ],
+    [
+      "gatekeeper"
+    ]
+  ],
+  "seats": [
+    {
+      "id": "release",
+      "role": "DevOps",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/env-contract.md",
+        ".solo/tests.md",
+        ".solo/risks.md"
+      ],
+      "writes": [
+        ".solo/release.md",
+        ".solo/monitoring.md"
+      ],
+      "commands": [
+        "/release:preflight",
+        "/release:deploy-plan",
+        "/release:rollback-plan",
+        "/site-doctor:monitoring",
+        "/gate:before-deploy"
+      ],
+      "deliverable": "Preflight PASS + deploy & rollback plans in .solo/release.md, monitoring recorded in .solo/monitoring.md, before-deploy GO",
+      "handoff_to": "docs",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "docs",
+      "role": "Documentation Writer",
+      "model_hint": "fast",
+      "reads": [
+        ".solo/release.md",
+        ".solo/api-contract.md"
+      ],
+      "writes": [
+        "README/docs"
+      ],
+      "commands": [
+        "/docs:update",
+        "/docs:setup-guide",
+        "/docs:runbook",
+        "/git:release-notes"
+      ],
+      "deliverable": "Docs current + user-facing and technical release notes",
+      "handoff_to": "gatekeeper",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "gatekeeper",
+      "role": "Launch Gatekeeper",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/release.md",
+        ".solo/monitoring.md",
+        ".solo/risks.md"
+      ],
+      "writes": [
+        ".solo/risks.md",
+        ".solo/handoff.md"
+      ],
+      "commands": [
+        "/gate:production-ready",
+        "/solo:handoff-memory"
+      ],
+      "deliverable": "Score /100 + Launch Status + saved handoff",
+      "handoff_to": null,
+      "handoff_check": "/ai:handoff-check"
+    }
+  ],
+  "exit_gate": "/gate:production-ready",
+  "exit_criteria": "before-deploy returned GO and production-ready is not BLOCKED"
+}

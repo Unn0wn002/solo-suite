@@ -1,0 +1,19 @@
+{
+  "name": "growth",
+  "version": "1.0.1",
+  "description": "Growth: audit the conversion funnel and find where users drop off and why. Skill: conversion-optimizer (delegates measurement to site-doctor analytics/forms). Command: /growth:conversion-audit.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "growth",
+    "conversion",
+    "cro",
+    "funnel",
+    "drop-off",
+    "activation",
+    "analytics",
+    "forms",
+    "solo"
+  ]
+}

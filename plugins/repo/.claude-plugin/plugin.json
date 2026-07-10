@@ -1,0 +1,20 @@
+{
+  "name": "repo",
+  "version": "1.0.2",
+  "description": "Repo intelligence: understand a codebase before editing it \u2014 structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "repo",
+    "codebase",
+    "map",
+    "risk",
+    "dependencies",
+    "dead-code",
+    "onboarding",
+    "analysis",
+    "read-only",
+    "solo"
+  ]
+}

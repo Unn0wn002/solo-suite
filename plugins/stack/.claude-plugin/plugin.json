@@ -1,0 +1,34 @@
+{
+  "name": "stack",
+  "version": "1.4.1",
+  "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names \u2014 never secrets) and states which it used.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "stack",
+    "intake",
+    "cloudflare",
+    "vercel",
+    "supabase",
+    "analytics",
+    "tags",
+    "gtm",
+    "ga4",
+    "rls",
+    "payments",
+    "stripe",
+    "xendit",
+    "midtrans",
+    "paypal",
+    "webhooks",
+    "vendor-audit",
+    "solo",
+    "connector",
+    "connector-auditor",
+    "live-data",
+    "connector-mode",
+    "manual-mode",
+    "evidence"
+  ]
+}

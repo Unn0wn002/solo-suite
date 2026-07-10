@@ -1,0 +1,327 @@
+{
+  "schema": "solo-suite/agentroom-v1",
+  "name": "full-team-website",
+  "version": 1,
+  "description": "Complete website build from idea to launch: the /solo:full-team-dev flow split into five staffed rooms.",
+  "based_on_room": "Planning + Build + QA + Hardening + Launch rooms combined",
+  "memory_dir": ".solo/",
+  "rules": [
+    "one writer per artifact \u2014 two seats never edit the same .solo/ file or code area in the same stage",
+    "context is explicit \u2014 each seat reads only its listed files, plus .solo/handoff.md",
+    "every seat ends with a handoff checked by /ai:handoff-check before the next stage starts",
+    "route models with /ai:compare-models; audit generated code with /ai:review-output",
+    "no evidence, no finding \u2014 audits follow the evidence-based output format"
+  ],
+  "stages": [
+    [
+      "pm"
+    ],
+    [
+      "architect"
+    ],
+    [
+      "designer"
+    ],
+    [
+      "implementer"
+    ],
+    [
+      "reviewer"
+    ],
+    [
+      "tester",
+      "browser_qa"
+    ],
+    [
+      "security",
+      "auditor"
+    ],
+    [
+      "git_manager"
+    ],
+    [
+      "release",
+      "docs"
+    ],
+    [
+      "gatekeeper"
+    ]
+  ],
+  "seats": [
+    {
+      "id": "pm",
+      "role": "Product Manager",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/project.md",
+        ".solo/stack.md"
+      ],
+      "writes": [
+        ".solo/prd.md"
+      ],
+      "commands": [
+        "/stack:intake",
+        "/project:prd",
+        "/spec:feature-brief",
+        "/spec:acceptance"
+      ],
+      "deliverable": "PRD with MVP scope, non-goals, and testable acceptance criteria",
+      "handoff_to": "architect",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "architect",
+      "role": "Software Architect",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/prd.md"
+      ],
+      "writes": [
+        ".solo/architecture.md",
+        ".solo/api-contract.md",
+        ".solo/data-contract.md",
+        ".solo/env-contract.md"
+      ],
+      "commands": [
+        "/project:architecture",
+        "/spec:api-contract",
+        "/spec:data-contract",
+        "/spec:env-contract"
+      ],
+      "deliverable": "Architecture + API/data/env contracts",
+      "handoff_to": "designer",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "designer",
+      "role": "UI/UX Designer",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/prd.md",
+        ".solo/architecture.md"
+      ],
+      "writes": [
+        ".solo/design.md"
+      ],
+      "commands": [
+        "/design:ux-flow",
+        "/design:component-system"
+      ],
+      "deliverable": "Core flows incl. empty/loading/error states + component system",
+      "handoff_to": "implementer",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "implementer",
+      "role": "Fullstack Developer",
+      "model_hint": "strong-coding",
+      "reads": [
+        ".solo/tasks.md",
+        ".solo/api-contract.md",
+        ".solo/data-contract.md",
+        ".solo/design.md"
+      ],
+      "writes": [
+        ".solo/decisions.md"
+      ],
+      "commands": [
+        "/project:task-breakdown",
+        "/gate:before-code",
+        "/dev:implement-feature"
+      ],
+      "deliverable": "Working feature per task, decisions logged",
+      "handoff_to": "reviewer",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "reviewer",
+      "role": "Code Reviewer (different model than implementer)",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        "changed files (PR diff)",
+        ".solo/tasks.md",
+        ".solo/api-contract.md"
+      ],
+      "writes": [
+        ".solo/tasks.md"
+      ],
+      "commands": [
+        "/dev:code-review",
+        "/ai:review-output"
+      ],
+      "deliverable": "Review verdict + hallucination/missing-file audit",
+      "handoff_to": "tester",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "tester",
+      "role": "QA Engineer",
+      "model_hint": "strong-coding",
+      "reads": [
+        ".solo/prd.md",
+        ".solo/tasks.md"
+      ],
+      "writes": [
+        ".solo/tests.md"
+      ],
+      "commands": [
+        "/test:unit",
+        "/test:integration",
+        "/test:e2e"
+      ],
+      "deliverable": "Tests passing, results in .solo/tests.md",
+      "handoff_to": "security",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "browser_qa",
+      "role": "Browser QA",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/design.md"
+      ],
+      "writes": [
+        ".solo/bugs.md"
+      ],
+      "commands": [
+        "/browser:smoke-test",
+        "/browser:console-errors",
+        "/browser:mobile-test"
+      ],
+      "deliverable": "Real-browser evidence: flows, console, 320/375/768",
+      "handoff_to": "auditor",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "security",
+      "role": "Security Reviewer",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/architecture.md",
+        ".solo/api-contract.md"
+      ],
+      "writes": [
+        ".solo/risks.md"
+      ],
+      "commands": [
+        "/security:threat-model",
+        "/security:authz-matrix",
+        "/security:rls-test"
+      ],
+      "deliverable": "Threat model, authz matrix, RLS pass/fail",
+      "handoff_to": "git_manager",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "auditor",
+      "role": "Site Doctor + Stack Auditor",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/stack.md"
+      ],
+      "writes": [
+        ".solo/tasks.md"
+      ],
+      "commands": [
+        "/site-doctor:full-checkup",
+        "/stack:audit-vercel",
+        "/stack:audit-supabase",
+        "/stack:audit-cloudflare",
+        "/stack:audit-tags",
+        "/stack:audit-payments"
+      ],
+      "deliverable": "Evidence-based findings with fix order",
+      "handoff_to": "git_manager",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "git_manager",
+      "role": "Git/PR Manager",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        "changed files (PR diff)",
+        ".solo/tests.md",
+        ".solo/risks.md",
+        ".solo/env-contract.md"
+      ],
+      "writes": [
+        ".solo/tasks.md"
+      ],
+      "commands": [
+        "/git:commit-plan",
+        "/git:pr-review",
+        "/gate:before-merge"
+      ],
+      "deliverable": "Commit plan + PR review verdict recorded, before-merge GO",
+      "handoff_to": "release",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "release",
+      "role": "DevOps",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/env-contract.md",
+        ".solo/risks.md"
+      ],
+      "writes": [
+        ".solo/release.md",
+        ".solo/monitoring.md"
+      ],
+      "commands": [
+        "/release:preflight",
+        "/release:deploy-plan",
+        "/release:rollback-plan",
+        "/site-doctor:monitoring",
+        "/gate:before-deploy"
+      ],
+      "deliverable": "Preflight + deploy & rollback plans + monitoring recorded, before-deploy GO",
+      "handoff_to": "gatekeeper",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "docs",
+      "role": "Documentation Writer",
+      "model_hint": "fast",
+      "reads": [
+        ".solo/api-contract.md",
+        ".solo/env-contract.md"
+      ],
+      "writes": [
+        "README/docs"
+      ],
+      "commands": [
+        "/docs:update",
+        "/docs:setup-guide",
+        "/docs:runbook"
+      ],
+      "deliverable": "Updated README, setup guide, runbook",
+      "handoff_to": "gatekeeper",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "gatekeeper",
+      "role": "Launch Gatekeeper",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/risks.md",
+        ".solo/tests.md",
+        ".solo/release.md",
+        ".solo/monitoring.md"
+      ],
+      "writes": [
+        ".solo/risks.md",
+        ".solo/handoff.md"
+      ],
+      "commands": [
+        "/gate:production-ready",
+        "/solo:handoff-memory"
+      ],
+      "deliverable": "12-category score /100 + Launch Status + handoff",
+      "handoff_to": null,
+      "handoff_check": "/ai:handoff-check"
+    }
+  ],
+  "exit_gate": "/gate:production-ready",
+  "exit_criteria": "Launch Status is SAFE TO LAUNCH, or LAUNCH WITH WARNINGS with every warning listed and accepted"
+}

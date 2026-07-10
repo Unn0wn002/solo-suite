@@ -1,0 +1,25 @@
+{
+  "name": "ai",
+  "version": "1.3.0",
+  "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from templates. Skills: ai-output-auditor, agent-room-templates (ships 4 ready-made agentsrooms (validated by scripts/validate_rooms.py)/*.json room files: full-team-website, site-doctor-audit, production-release, bug-fix-loop). Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "ai",
+    "agents",
+    "prompt",
+    "handoff",
+    "review",
+    "hallucination",
+    "model-routing",
+    "claude",
+    "codex",
+    "gemini",
+    "solo",
+    "agent-rooms",
+    "multi-agent",
+    "rooms",
+    "templates"
+  ]
+}

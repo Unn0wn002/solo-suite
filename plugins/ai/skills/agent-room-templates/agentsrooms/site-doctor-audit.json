@@ -1,0 +1,86 @@
+{
+  "schema": "solo-suite/agentroom-v1",
+  "name": "site-doctor-audit",
+  "version": 1,
+  "description": "Full production health audit of an existing website: generic checkup + vendor audits in parallel, then triage into a fix order.",
+  "based_on_room": "Hardening Room",
+  "memory_dir": ".solo/",
+  "rules": [
+    "one writer per artifact \u2014 two seats never edit the same .solo/ file or code area in the same stage",
+    "context is explicit \u2014 each seat reads only its listed files, plus .solo/handoff.md",
+    "every seat ends with a handoff checked by /ai:handoff-check before the next stage starts",
+    "route models with /ai:compare-models; audit generated code with /ai:review-output",
+    "no evidence, no finding \u2014 audits follow the evidence-based output format"
+  ],
+  "stages": [
+    [
+      "site_auditor",
+      "stack_auditor"
+    ],
+    [
+      "triager"
+    ]
+  ],
+  "seats": [
+    {
+      "id": "site_auditor",
+      "role": "Site Doctor",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/stack.md",
+        ".solo/monitoring.md"
+      ],
+      "writes": [
+        ".solo/bugs.md"
+      ],
+      "commands": [
+        "/site-doctor:full-checkup"
+      ],
+      "deliverable": "Scored, evidence-based findings: Critical/High/Medium/Low + release-blocked verdict",
+      "handoff_to": "triager",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "stack_auditor",
+      "role": "Vendor Auditor",
+      "model_hint": "balanced",
+      "reads": [
+        ".solo/stack.md",
+        ".solo/env-contract.md"
+      ],
+      "writes": [
+        ".solo/risks.md"
+      ],
+      "commands": [
+        "/stack:audit-vercel",
+        "/stack:audit-supabase",
+        "/stack:audit-cloudflare",
+        "/stack:audit-tags",
+        "/stack:audit-payments"
+      ],
+      "deliverable": "Connector-mode (or stated manual-mode) vendor findings",
+      "handoff_to": "triager",
+      "handoff_check": "/ai:handoff-check"
+    },
+    {
+      "id": "triager",
+      "role": "Fix Triager",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/bugs.md",
+        ".solo/risks.md"
+      ],
+      "writes": [
+        ".solo/tasks.md"
+      ],
+      "commands": [
+        "/solo:next-step"
+      ],
+      "deliverable": "Merged fix order with owner role per fix, as stable T-IDs",
+      "handoff_to": null,
+      "handoff_check": "/ai:handoff-check"
+    }
+  ],
+  "exit_gate": "/gate:score-project",
+  "exit_criteria": "Every Critical/High finding has a T-ID, an owner role, and a position in the fix order; criticals scheduled first"
+}

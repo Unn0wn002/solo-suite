@@ -1,0 +1,7 @@
+{
+  "name": "project",
+  "version": "1.0.0",
+  "description": "Planning for solo developers: PRD, architecture, and task breakdown. Product-manager and software-architect skills that write to shared .solo/ project memory.",
+  "author": { "name": "Ayaya" },
+  "keywords": ["planning", "prd", "requirements", "architecture", "product-management", "tasks", "solo"]
+}

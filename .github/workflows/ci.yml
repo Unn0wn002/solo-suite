@@ -1,0 +1,27 @@
+name: tests
+on:
+  push:
+  pull_request:
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.9", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Offline regression tests (loopback fixtures only - no external network)
+        run: python -m unittest discover -s tests -t . -v
+      - name: Suite self-check (12 checks)
+        run: python plugins/solo/skills/suite-integrity/scripts/self_check.py . -
+      - name: AgentRooms static validation
+        run: python plugins/ai/skills/agent-room-templates/scripts/validate_rooms.py

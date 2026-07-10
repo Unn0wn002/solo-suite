@@ -1,0 +1,28 @@
+{
+  "name": "solo",
+  "version": "1.5.2",
+  "description": "The heart of the solo workflow: persistent project memory across sessions, syncing it outward, self-checking the whole suite, and orchestrating the full team. Skills: project-memory-manager (owns the standard 16-file .solo/ contract), memory-sync (Obsidian + Grafana), suite-integrity (mechanical self-check with a stdlib script). Commands: /solo:start-session, /solo:end-session, /solo:run-cycle, /solo:full-team-dev (idea \u2192 production, gates enforced), /solo:handoff-memory, /solo:next-step, /solo:project-status, /solo:self-check, /solo:sync-obsidian, /solo:sync-grafana.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "memory",
+    "context",
+    "handoff",
+    "session",
+    "start-session",
+    "end-session",
+    "run-cycle",
+    "sync",
+    "obsidian",
+    "grafana",
+    "project-status",
+    "next-step",
+    "solo",
+    "workflow",
+    "self-check",
+    "full-team-dev",
+    "orchestrator",
+    "integrity"
+  ]
+}

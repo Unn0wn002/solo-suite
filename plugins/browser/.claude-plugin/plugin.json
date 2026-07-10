@@ -1,0 +1,21 @@
+{
+  "name": "browser",
+  "version": "1.0.2",
+  "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test.",
+  "author": {
+    "name": "Ayaya"
+  },
+  "keywords": [
+    "browser",
+    "qa",
+    "testing",
+    "console",
+    "network",
+    "hydration",
+    "responsive",
+    "mobile",
+    "forms",
+    "e2e",
+    "solo"
+  ]
+}
