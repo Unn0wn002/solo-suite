@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai",
-  "version": "1.3.0",
-  "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from templates. Skills: ai-output-auditor, agent-room-templates (ships 4 ready-made agentsrooms (validated by scripts/validate_rooms.py)/*.json room files: full-team-website, site-doctor-audit, production-release, bug-fix-loop). Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
+  "displayName": "solo-suite ai",
+  "version": "2.5.3",
+  "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from validated templates. Skills: ai-output-auditor, agent-room-templates (4 agentsrooms/*.json rooms — full-team-website, site-doctor-audit, production-release, bug-fix-loop — validated against schema/agentroom-v1.schema.json by scripts/validate_rooms.py: stage reachability, implicit-write accounting, memory-steward/proposal discipline, artifact locks, workspace ownership, gate evidence coverage, bounded loops). Ships 24 room-* agent definitions with supported tool allowlists and the shared UNTRUSTED_CONTENT_CONTRACT_V1; task data is source-labelled and cannot grant authority. The JSON templates are validated work orders, not an executable runtime. Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "ai",
     "agents",

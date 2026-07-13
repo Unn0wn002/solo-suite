@@ -1,11 +1,15 @@
 ---
 description: Run a full database audit (schema, indexes, queries, security, integrity) for PostgreSQL, MySQL, or SQLite
-argument-hint: [connection string, db file path, or schema dump]
+argument-hint: [environment-variable/profile name, db file path, or schema dump]
 ---
 Use the database-audit skill to audit: $ARGUMENTS
 
-If no target was provided, first ask for the engine and how to access it
-(connection string, SQLite file path, or schema dump). Use the read-only
+If no target was provided, first ask for the engine and how to access it.
+For PostgreSQL/MySQL, request only the NAME of an environment variable,
+client profile, local socket, or secret-store reference -- never ask the user
+to paste a credential-bearing connection string into chat or command
+arguments. A SQLite file path or schema dump is also acceptable. Confirm that
+any live account is read-only before connecting. Use the read-only
 queries from the skill's references/audit-queries.md, work through all six
 categories, and produce the standard severity-ranked report. Finish by
 offering to apply fixes with the database-fix skill.

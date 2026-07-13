@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "git",
-  "version": "1.0.0",
+  "displayName": "solo-suite git",
+  "version": "1.1.1",
   "description": "Git & repository workflow for solo devs: safe branches, clean commits, PR review, release notes, and GitHub issue sync. Skill: git-workflow-manager. Commands: /git:create-branch, /git:commit-plan, /git:pr-review, /git:release-notes, /git:sync-issues. Proposes and confirms before any write; never runs destructive git.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "git",
     "branch",

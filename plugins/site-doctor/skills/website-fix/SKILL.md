@@ -1,6 +1,7 @@
 ---
 name: website-fix
 description: Safely apply fixes for website issues found by an audit or debugging session — security headers, HTTPS, caching, images, SEO tags, accessibility, broken links — one change at a time with verification after each. Use when the user says "fix the issues", "fix what the audit found", "apply the fixes", "clean these up", or asks to remediate any finding from a site review, even a single one.
+disable-model-invocation: true
 ---
 
 # Website Fix

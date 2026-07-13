@@ -8,6 +8,10 @@ Stdlib only. Usage:
     python3 check_deps.py /path/to/project
 
 Exit 0 always (informational).
+
+Exit codes: 0 = inventory produced, nothing left unverified; 2 = usage;
+3 = inventory produced but vulnerability status is UNVERIFIED until the
+listed ecosystem tools run.
 """
 import sys
 import os
@@ -28,8 +32,14 @@ def read_json(path):
         return None
 
 
+EXACT_VERSION = re.compile(
+    r"^v?\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$")
+
+
 def pin_kind(spec):
-    """Classify a semver range's strictness."""
+    """Classify a semver range's strictness. A spec is 'exact' only when the
+    WHOLE string is a single full version — ranges that merely BEGIN with a
+    digit (1.x, 1.2.*, hyphen ranges, || unions, '1.2.3 - 2.0.0') are ranges."""
     s = str(spec).strip()
     if s in ("*", "latest", "") or s.startswith(("x", "X")):
         return "unpinned (*)"
@@ -37,10 +47,12 @@ def pin_kind(spec):
         return "caret (^) — allows minor+patch"
     if s.startswith("~"):
         return "tilde (~) — allows patch"
-    if re.match(r"^\d", s):
-        return "exact"
     if s.startswith(("git", "http", "file:", "link:", "workspace:")):
         return "non-registry"
+    if EXACT_VERSION.match(s):
+        return "exact"
+    if re.match(r"^v?\d", s):
+        return "range (starts with a digit but is not a full pin)"
     return "range"
 
 
@@ -99,7 +111,8 @@ def analyze_node(root, report):
 
 
 def analyze_python(root, report):
-    files = [f for f in ("requirements.txt", "pyproject.toml", "Pipfile",
+    files = [f for f in ("requirements.txt", "requirements-dev.lock",
+                         "requirements.lock", "pyproject.toml", "Pipfile",
                          "setup.py", "setup.cfg") if find(root, f)]
     if not files:
         return
@@ -122,13 +135,51 @@ def analyze_python(root, report):
             report.append(f"  [WARN] {unpinned} unpinned requirement(s) — "
                           "pin with == for reproducible installs")
 
-    locks = [l for l in ("poetry.lock", "Pipfile.lock", "pdm.lock",
-                         "uv.lock") if find(root, l)]
+    requirement_locks = [l for l in ("requirements-dev.lock",
+                                     "requirements.lock") if find(root, l)]
+    for lock in requirement_locks:
+        records = []
+        current = ""
+        try:
+            with open(find(root, lock), encoding="utf-8") as f:
+                for raw in f:
+                    line = raw.strip()
+                    if not line or line.startswith("#"):
+                        continue
+                    current += (" " if current else "") + line
+                    if current.endswith("\\"):
+                        current = current[:-1].rstrip()
+                        continue
+                    records.append(current)
+                    current = ""
+            if current:
+                records.append(current)
+        except Exception:
+            records = []
+        requirements = [r for r in records if not r.startswith("--")]
+        pinned = sum(1 for r in requirements if re.match(
+            r"^[A-Za-z0-9_.-]+(?:\[[^]]+\])?==[^ ;\\]+", r))
+        hashed = sum(1 for r in requirements if "--hash=sha256:" in r)
+        report.append("  %s entries: %d (%d exact-pinned, %d hash-covered)"
+                      % (lock, len(requirements), pinned, hashed))
+        if requirements and pinned == len(requirements) and hashed == len(requirements):
+            report.append("  [ok] hash-locked requirements file: %s" % lock)
+        else:
+            report.append("  [WARN] %s is not fully exact-pinned and hash-covered"
+                          % lock)
+
+    locks = requirement_locks + [l for l in (
+        "poetry.lock", "Pipfile.lock", "pdm.lock", "uv.lock") if find(root, l)]
     if locks:
         report.append(f"  [ok] lockfile present: {', '.join(locks)}")
     elif not req or unpinned:
         report.append("  [WARN] no lockfile and loose pins — installs may drift")
-    report.append("  NEXT: run `pip-audit` (or `safety check`) for live CVE data.")
+    if requirement_locks:
+        report.append("  NEXT: run `python -m pip_audit --require-hashes -r %s` "
+                      "for live CVE data and hash validation."
+                      % requirement_locks[0])
+    else:
+        report.append("  NEXT: run `pip-audit` for live CVE data.")
     report.append("")
 
 
@@ -158,11 +209,17 @@ def main(root):
     analyze_other(root, report)
     if len(report) == 1:
         report.append("No recognized dependency manifests found at the project root.")
+    nexts = sum(1 for line in report if line.strip().startswith("NEXT:"))
     report.append("Reminder: this script reports STRUCTURE (counts, pinning, "
                   "lockfiles). Vulnerability and license data come from the")
     report.append("ecosystem tools above and the dependency-audit skill's triage steps.")
+    if nexts:
+        report.append("[UNVERIFIED] vulnerability status of %d ecosystem(s) - "
+                      "run the NEXT commands above" % nexts)
+    report.append("RESULT: pass=%d warn=0 fail=0 unverified=%d"
+                  % (1 if not nexts else 0, nexts))
     print("\n".join(report))
-    return 0
+    return 3 if nexts else 0
 
 
 if __name__ == "__main__":

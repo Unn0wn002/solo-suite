@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "growth",
-  "version": "1.0.1",
+  "displayName": "solo-suite growth",
+  "version": "1.0.2",
   "description": "Growth: audit the conversion funnel and find where users drop off and why. Skill: conversion-optimizer (delegates measurement to site-doctor analytics/forms). Command: /growth:conversion-audit.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "growth",
     "conversion",

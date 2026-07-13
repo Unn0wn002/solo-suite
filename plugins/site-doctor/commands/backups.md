@@ -1,6 +1,6 @@
 ---
 description: Audit or design backup and disaster recovery (coverage, restore testing, RTO/RPO)
-argument-hint: [audit | design] [current setup or targets]
+argument-hint: "[audit | design] [current setup or targets]"
 ---
 Use the backup-recovery skill for: $ARGUMENTS
 
