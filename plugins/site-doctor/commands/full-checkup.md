@@ -1,6 +1,6 @@
 ---
 description: Full-stack checkup - audit the website AND its database, one combined report
-argument-hint: [site url] [db connection or file]
+argument-hint: "[site url] [db connection or file]"
 ---
 Run a complete health check on: $ARGUMENTS
 

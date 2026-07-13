@@ -14,8 +14,10 @@ Determine what personal data the site collects (accounts, forms, analytics, cook
 ## Run the tracker scan
 
 ```bash
-python3 scripts/scan_trackers.py https://example.com
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/compliance-check/scripts/scan_trackers.py" https://example.com
 ```
+> **Running helpers:** `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code to this plugin's installed root, so the command works from any working directory. If `python3` is not on PATH, use `python` (macOS/Linux/Windows) (Windows launcher) instead.
+
 Stdlib-only. Fetches the page and flags cookies set, third-party script/pixel origins, and common analytics/ad trackers — the factual basis for "what's actually collecting data here." Note: it sees server-set cookies and static third-party references; client-set cookies and dynamically injected tags need a real browser to catch fully, so treat it as a floor, not a ceiling.
 
 ## 1. Consent & cookies (the most common concrete gap)
@@ -73,4 +75,4 @@ Before auditing or building, read `.solo/stack.md` if it exists — it records t
 
 ## Script safety (url_guard)
 
-The bundled script(s) route every outbound request through `plugins/site-doctor/lib/url_guard.py`: HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.
+The bundled script(s) route every outbound request through `${CLAUDE_PLUGIN_ROOT}/lib/url_guard.py` (shipped at `plugins/site-doctor/lib/url_guard.py` in the source tree): HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.
