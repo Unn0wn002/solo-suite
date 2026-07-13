@@ -7,6 +7,10 @@ Stdlib only. Outbound requests go through lib/url_guard.py (SSRF guard) —
 private/internal/metadata targets and unsafe redirects are refused with a
 BLOCKED result. Usage:
     python3 extract_meta.py https://example.com [--max-pages 25] [--delay 0.3]
+
+Exit codes: 0 = crawl complete, no missing titles/descriptions or
+duplicate titles; 1 = SEO failures found; 2 = usage/blocked; 3 = nothing
+failed but coverage is UNVERIFIED (crawl truncated or nothing parsed).
 """
 import os
 import sys
@@ -37,7 +41,8 @@ class MetaParser(HTMLParser):
         self.canonical = None
         self.robots = None
         self.h1s = []
-        self._in_h1 = False
+        self._h1_depth = 0
+        self._h1_buf = []
         self.og = {}
         self.jsonld = 0
         self._in_jsonld = False
@@ -60,7 +65,9 @@ class MetaParser(HTMLParser):
         elif tag == "link" and (a.get("rel") or "").lower() == "canonical":
             self.canonical = a.get("href")
         elif tag == "h1":
-            self._in_h1 = True
+            if self._h1_depth == 0:
+                self._h1_buf = []
+            self._h1_depth += 1
         elif tag == "a" and a.get("href"):
             self.links.append(a["href"])
         elif tag == "script" and (a.get("type") or "").lower() == "application/ld+json":
@@ -71,17 +78,21 @@ class MetaParser(HTMLParser):
         if tag == "title":
             self._in_title = False
         elif tag == "h1":
-            self._in_h1 = False
+            if self._h1_depth > 0:
+                self._h1_depth -= 1
+                if self._h1_depth == 0:
+                    # one H1 element = ONE entry, even with nested spans/nodes
+                    text = " ".join("".join(self._h1_buf).split())
+                    self.h1s.append(text)
+                    self._h1_buf = []
         elif tag == "script":
             self._in_jsonld = False
 
     def handle_data(self, data):
         if self._in_title:
             self.title = (self.title or "") + data.strip()
-        elif self._in_h1:
-            t = data.strip()
-            if t:
-                self.h1s.append(t)
+        elif self._h1_depth > 0:
+            self._h1_buf.append(data)
 
 
 def fetch(url):
@@ -101,11 +112,27 @@ def fetch(url):
     return r.status, (r.body or b"").decode("utf-8", "replace"), xrobots
 
 
+def positive_int(value):
+    n = int(value)
+    if n < 1:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return n
+
+
+def non_negative_float(value):
+    import math
+    f = float(value)
+    if not math.isfinite(f) or f < 0:
+        raise argparse.ArgumentTypeError(
+            "must be a finite number >= 0 (got %r)" % value)
+    return f
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("start_url")
-    ap.add_argument("--max-pages", type=int, default=25)
-    ap.add_argument("--delay", type=float, default=0.3)
+    ap.add_argument("--max-pages", type=positive_int, default=25)
+    ap.add_argument("--delay", type=non_negative_float, default=0.3)
     args = ap.parse_args()
 
     start = args.start_url.rstrip("/")
@@ -192,6 +219,34 @@ def main():
             print(f"  {d[:60]!r}... on {len(urls)} pages")
     if not dup_t and not dup_d:
         print("No duplicate titles or descriptions found.")
+
+    # ---- structured verdict -------------------------------------------------
+    fails = warns = unverified = 0
+    for pg in pages:
+        if not pg["title"]:
+            fails += 1
+        if not pg["desc"]:
+            fails += 1
+        if len(pg["h1s"]) != 1:
+            warns += 1
+        if not pg["canonical"]:
+            warns += 1
+    fails += len(dup_t)
+    warns += len(dup_d)
+    if len(seen) >= args.max_pages and queue:
+        unverified += 1
+        print(f"[UNVERIFIED] crawl stopped at --max-pages {args.max_pages} "
+              f"with {len(queue)} URL(s) still queued - coverage incomplete")
+    if not pages:
+        unverified += 1
+        print("[UNVERIFIED] no pages could be parsed - nothing was checked")
+    passes = max(len(pages) * 2 - fails, 0)
+    print(f"\nRESULT: pass={passes} warn={warns} fail={fails} "
+          f"unverified={unverified}")
+    if fails:
+        return 1
+    if unverified:
+        return 3
     return 0
 
 

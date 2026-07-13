@@ -1,5 +1,6 @@
 ---
 name: memory-sync
+disable-model-invocation: true
 description: Mirror the project's .solo/ memory out to external tools so status and notes live where you want them — an Obsidian vault (project notes, linked and searchable) and a Grafana dashboard (project health metrics and release/audit annotations). Use when the user says sync, "push to Obsidian", "update my vault", "sync to Grafana", "project dashboard", mirror project status, or wants .solo/ reflected in their notes app or a dashboard. Reads .solo/; writes to the destination idempotently and never deletes the user's own content.
 ---
 
@@ -9,7 +10,28 @@ description: Mirror the project's .solo/ memory out to external tools so status 
 
 ## Setup (both modes)
 
-Read **all** `.solo/*.md` files (the full 16-file contract: project, stack, prd, architecture, api-contract, data-contract, env-contract, design, tasks, decisions, risks, bugs, tests, release, monitoring, handoff). If `.solo/` doesn't exist, there's nothing to sync — offer `/solo:start-session` / initialization first. Sync targets (vault path, Grafana URL/datasource) are remembered in `.solo/config.md` (an optional, local settings file — gitignore it if it holds anything sensitive) so you only configure them once; ask on first run, then reuse.
+Read **all** `.solo/*.md` files (the full 16-file contract: project, stack, prd, architecture, api-contract, data-contract, env-contract, design, tasks, decisions, risks, bugs, tests, release, monitoring, handoff). If `.solo/` doesn't exist, there's nothing to sync — offer `/solo:start-session` / initialization first.
+
+Sync targets are remembered in `.solo/config.md` so you only configure them once. **`.solo/config.md` may contain ONLY non-secrets**:
+
+- the service URL (e.g. the Grafana base URL)
+- non-secret resource identifiers (dashboard UID, datasource name, vault path)
+- the **name** of the environment variable that holds the token (e.g. `token_env: GRAFANA_API_TOKEN`) — **never the token value itself**
+
+**Token handling rules (hard requirements):**
+
+- Read token values from the named environment variable (or the OS secret store / keychain / credential manager) at run time. If the variable is unset, stop and tell the user how to set it — do not ask them to paste the token into chat or into any file.
+- On first configuration, **add `.solo/config.md` to `.gitignore` automatically** (create `.gitignore` if needed) and tell the user; local settings must never be committed.
+- **Never sync secrets**: exclude `.solo/config.md`, `.env*`, and anything matching secret patterns from Obsidian notes, Grafana dashboards, and annotations. The env-contract note syncs variable *names* only, never values.
+- **Redact logs and reports**: URLs are fine; tokens, Authorization headers, and cookie values never appear in output, even on error. Print `Authorization: Bearer ***redacted***` style placeholders when echoing requests.
+
+### Safety: preview first, confirm before writing
+
+This skill is **manual-only** (`disable-model-invocation: true` — run it via `/solo:sync-obsidian` / `/solo:sync-grafana`), and every external write is gated:
+
+1. **Default is a dry run.** First produce a preview: which notes/dashboard/annotations *would* be created or updated, with a diff-style summary. No external write happens in the preview.
+2. **Explicit confirmation** ("yes, apply") is required before any write to the vault, the Grafana API, or any other destination.
+3. Report exactly what was written afterward, so re-runs stay idempotent and auditable.
 
 ## Mode: Obsidian (`/solo:sync-obsidian`)
 
@@ -27,7 +49,7 @@ Mirror the memory into an Obsidian vault as clean, linked markdown notes — tur
 
 Push project **health** to Grafana so a solo dev gets the team-style dashboard view — burndown, blockers, audit findings, release markers. Because `.solo/` is markdown (not a time-series store), sync means two things:
 
-1. **Dashboard definition**: generate/refresh a Grafana dashboard JSON with panels for the metrics derivable from memory — open vs done vs blocked task counts (stat panels), tasks-done-over-time (from the dates in `decisions.md`/`tasks.md` Done entries), open audit findings by severity (from audit tasks written back by site-doctor/stack audits), and a table of current blockers. If a **Grafana connector/MCP or API** is available (URL + token from `.solo/config.md`), create/update the dashboard directly (match by UID so it updates in place, not duplicates); otherwise emit the dashboard JSON for the user to import.
+1. **Dashboard definition**: generate/refresh a Grafana dashboard JSON with panels for the metrics derivable from memory — open vs done vs blocked task counts (stat panels), tasks-done-over-time (from the dates in `decisions.md`/`tasks.md` Done entries), open audit findings by severity (from audit tasks written back by site-doctor/stack audits), and a table of current blockers. If a **Grafana connector/MCP or API** is available (URL and dashboard UID from `.solo/config.md`; token from the environment variable named there), create/update the dashboard directly (match by UID so it updates in place, not duplicates); otherwise emit the dashboard JSON for the user to import.
 2. **Annotations / events**: post Grafana annotations for meaningful moments so they show as markers on the dashboard/time-series — releases (from `/release:*` activity), audits run, and key decisions from `decisions.md`. Via the connector/API if present; otherwise emit the annotation payloads. Store processed IDs so re-running doesn't double-post.
 3. **Metrics source (optional, if they want live trends)**: if the project already ships metrics to a datasource (Prometheus/Loki/etc. — check `stack.md`), point panels at it and keep the memory-derived panels alongside. Don't stand up new infrastructure unprompted.
 4. **Report**: dashboard UID/URL (or the exported JSON), and which annotations were posted.
@@ -39,7 +61,9 @@ Push project **health** to Grafana so a solo dev gets the team-style dashboard v
 - **`.solo/` is authoritative**; destinations are one-way mirrors unless the user explicitly asks for two-way (which needs conflict handling — don't do it silently).
 - **Idempotent**: re-running updates in place; no duplicates, no churn.
 - **Non-destructive**: never delete or overwrite the user's own notes/dashboards; write managed content inside markers and match by stable IDs/UIDs.
-- **Config once**: remember targets in `.solo/config.md`; don't re-ask every run.
+- **Config once**: remember targets in `.solo/config.md` (non-secrets only: URLs, UIDs, paths, env-var *names*); don't re-ask every run. Keep it gitignored.
+- **Secrets stay out**: token values live in environment variables or the OS secret store, never in `.solo/`, never in synced content, never in logs.
+- **Preview → confirm → write**: external writes only after an explicit dry-run preview and user confirmation.
 - **Degrade gracefully**: use a connector/MCP/API when available; otherwise produce the file/JSON/payloads for manual import and say so.
 
 ## Working with other skills & plugins

@@ -19,11 +19,13 @@ They're stdlib-only Python, no installs needed:
 
 ```bash
 # Security headers, HTTPS redirect, compression, cookie flags, exposed files
-python3 scripts/check_headers.py https://example.com
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/website-audit/scripts/check_headers.py" https://example.com
 
 # Crawl same-domain pages, find broken links + mixed content
-python3 scripts/check_links.py https://example.com --max-pages 30
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/website-audit/scripts/check_links.py" https://example.com --max-pages 30
 ```
+> **Running helpers:** `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code to this plugin's installed root, so the command works from any working directory. If `python3` is not on PATH, use `python` (macOS/Linux/Windows) (Windows launcher) instead.
+
 
 Use their output as raw evidence, then do the manual checks below. If a script can't reach the site (auth wall, localhost-only), fall back to `curl -sI` and reading the codebase.
 
@@ -130,4 +132,4 @@ Before auditing or building, read `.solo/stack.md` if it exists — it records t
 
 ## Script safety (url_guard)
 
-The bundled script(s) route every outbound request through `plugins/site-doctor/lib/url_guard.py`: HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.
+The bundled script(s) route every outbound request through `${CLAUDE_PLUGIN_ROOT}/lib/url_guard.py` (shipped at `plugins/site-doctor/lib/url_guard.py` in the source tree): HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.

@@ -4,8 +4,9 @@
 
 This is [solo-team](#the-team-plugins) (nine roles that plan, design, build, test, release, and document), [site-doctor](#the-toolkit-plugin) (26 skills that audit, debug, and fix real websites and databases), and a [stack-aware layer](#the-stack-plugin) (ask what tools you use, then audit them by vendor) in **one marketplace**. They were built for each other: everything runs through the same `.solo/` project memory, so your stack is known before anything runs, an audit finding becomes a task, a task becomes tested code, and tested code becomes a safe release — across sessions, without you re-loading context each time. On top sits a **workflow layer** — git, spec, repo intelligence, deeper security, real-browser QA, quality gates, an AI-coding co-pilot, and growth — so the same memory also drives your branches, contracts, reviews, and go/no-go gates.
 
-- **17 plugins** · **56 skills** · **100 slash commands** · **10 stdlib helper scripts**
-- Offline regression tests (`tests/`, stdlib unittest, loopback fixtures only) + Linux/Windows CI (`.github/workflows/ci.yml`); site-doctor's network scripts are SSRF-guarded by `plugins/site-doctor/lib/url_guard.py`.
+- **18 plugins** · **56 skills** · **102 slash commands** · **13 stdlib helper scripts** · **24 room-* agents**
+  (17 component plugins + the `full-team` meta-plugin that depends on all of them)
+- Offline regression tests (`tests/`, stdlib unittest, loopback fixtures only) + hardened Linux/Windows CI (`.github/workflows/ci.yml`: least-privilege permissions, pinned actions, an integrity-locked Claude CLI whose official validation is mandatory, packaged-install and marketplace smoke tests, and separate read-only build, OIDC-only signing, and write-only publishing jobs for version tags). Signed release assets are checksum-verified at each job boundary and downloaded back from the draft GitHub Release for exact byte/signature verification before promotion. Site-doctor's network scripts are SSRF-guarded by `plugins/site-doctor/lib/url_guard.py`; the secret scanner emits only redacted, fingerprinted findings. AgentRooms templates are schema-validated (`agentroom-v1`) with a memory-steward model for parallel agents, a shared untrusted-content contract, supported tool allowlists, and source-labelled task envelopes; they ship with 24 `room-*` agent definitions. The JSON rooms are validated work orders, not an executable runtime.
 - One install source, one shared memory, every command name preserved
 - Covers the whole loop: **intake → spec → plan → map → design → build → review → test → browser-QA → audit → gate → release → operate → document → sync**
 
@@ -53,10 +54,10 @@ Skills fire **automatically** on matching requests; the slash commands are expli
 
 ## Run the whole team — and keep it honest
 
-- **`/solo:full-team-dev`** — the master command: the complete cycle from idea to production readiness in 15 phases (Intake → PRD → Architecture → Contracts → UX/UI → Tasks → Build → Review → Tests → Browser QA → Security → Stack audit → Merge & release → Docs → Launch & handoff), hard-stopping at every gate. Resume-aware via `.solo/`.
+- **`/solo:full-team-dev`** — the master command: the complete cycle from idea to production readiness in 16 phases (Intake → PRD → Architecture → Contracts → UX/UI → Tasks → Build → Review → Tests → Browser QA → Security → Stack audit → Growth → Merge & release → Docs → Launch & handoff), staffing all 17 team roles, hard-stopping at every gate, and profile-aware: phases that don't apply to the project profile are skipped with an evidence-backed N/A reason. Resume-aware via `.solo/`. It exercises **all 17 component plugins directly** (the `ai` plugin via `/ai:review-output` between major phases — and it additionally drives the whole flow when run as a multi-agent room).
 - **`/solo:self-check`** — verifies the suite itself: manifests valid, every command has title/purpose/inputs/output, every skill has a SKILL.md, README & marketplace counts match reality, no duplicate names, no broken cross-references, and which `.solo/` memory files are missing. Backed by a stdlib script (`suite-integrity`).
 - **Strict gates** — `/gate:before-code`, `/gate:before-merge`, `/gate:before-deploy` each have an explicit blocker list; **one failed check = NO-GO**, never averaged away.
-- **Scoring** — `/gate:production-ready` scores 12 categories 0–10 (overall /100) and returns **Launch Status: BLOCKED / SAFE TO LAUNCH / LAUNCH WITH WARNINGS**, with hard blockers (SEO basics, analytics, error tracking, mobile, serious a11y, unverified auth/RLS/payments/email, committed secrets, no backup/rollback) forcing BLOCKED regardless of score. `/gate:score-project` runs the same checklist and scoring without the launch verdict — the trend metric between gate runs.
+- **Scoring** — `/gate:production-ready` scores **14 categories** (Product, Architecture, Design, Frontend, Backend, Database, Security, Testing, Performance, SEO, Analytics, Deployment, Monitoring, Documentation) each 0–10. Categories with an accepted N/A record under the applicability matrix leave the denominator (the seven mandatory categories never do): `applicable_max = applicable_category_count * 10` and `normalized_score = round(total / applicable_max * 100)`. It reports that normalized score, and returns **Launch Status: BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH**, with hard blockers forcing BLOCKED regardless of score. Every category verdict is backed by machine-readable, self-attested local gate evidence (`gate-evidence-v1`, created at FINAL_SHA through the manual-only `/gate:finalize-evidence` workflow) that the gate **rejects when stale** — wrong HEAD, wrong committed-tree digest, wrong environment, or expired. Each command is previewed first, requires an exact confirmation token and explicit network approval when applicable, captures bounded output in a scrubbed child environment, and runs in a killable POSIX process group or Windows Job Object; surviving descendants/readers refuse evidence. Authenticated `gh run view` uses only an explicit external `--gh-config-dir` reference, never ambient token variables or the normal user HOME. Still use an OS/container sandbox for untrusted projects. The unsigned local record cannot cryptographically prove which process authored it or that a human approved it; its `recorder` field is a copyable format label. `/gate:score-project` runs the same checklist and scoring without the launch verdict — the trend metric between gate runs.
 - **Evidence-based audits** — every audit command outputs Status → Evidence Checked → Findings → Risk Level → Required Fixes → Verification Steps → Next Recommended Command. No evidence, no finding.
 - **Two-mode stack audits** — Connector mode (live config via connector-auditor, read-only, never prints secrets) or Manual mode (asks for screenshots, config files, env-var *names*); each audit states which mode it used.
 - **Agent rooms** — `/ai:agent-rooms` sets up multi-agent workflows from five templates (Planning, Build, QA, Hardening, Launch) and ships four ready-made JSON room files (`agentsrooms/`: full-team-website, site-doctor-audit, production-release, bug-fix-loop): one writer per artifact, explicit `.solo/` context per seat, handoffs checked, exit gate enforced.
@@ -78,9 +79,9 @@ Eight focused plugins that turn the same `.solo/` memory into day-to-day enginee
 | **ai** | ai-output-auditor, agent-room-templates | `/ai:prompt-improve` `/ai:handoff-check` `/ai:review-output` `/ai:compare-models` `/ai:repair-cycle` `/ai:agent-rooms` |
 | **growth** | conversion-optimizer | `/growth:conversion-audit` |
 
-**Every command ends with one of three fixed contracts** — the 7-part work contract (Summary · Findings/Work done · Risks · Required fixes · Suggested tasks (→ `.solo/tasks.md`, stable T-IDs) · Verification · Next command), the evidence-based audit format, or the gate verdict — so each step tells you exactly what to run next and every finding becomes a tracked task.
+**Every command ends with a fixed, self-describing output contract.** Most use one of three shared formats — the 7-part work contract (Summary · Findings/Work done · Risks · Required fixes · Suggested tasks (→ `.solo/tasks.md`, stable T-IDs) · Verification · Next command), the evidence-based audit format, or the gate verdict — and a few use richer task-specific formats built on the same principles (e.g. `/dev:implement-feature`'s files-changed contract and `/site-doctor:full-checkup`'s scored health report). Either way, each step tells you exactly what to run next and every finding becomes a tracked task.
 
-`/gate:production-ready` runs a full 12-section launch checklist (Product, Design, Backend, Frontend, Security, Testing, Performance, SEO, Analytics, Deployment, Monitoring, Docs) and returns BLOCKED / SAFE TO LAUNCH / LAUNCH WITH WARNINGS — where any critical failure (secrets committed, no auth where needed, RLS off where needed, no backup/rollback) forces **BLOCKED** regardless of the average.
+`/gate:production-ready` runs a full 14-section launch checklist (Product, Architecture, Design, Frontend, Backend, Database, Security, Testing, Performance, SEO, Analytics, Deployment, Monitoring, Documentation) and returns BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH — where any critical failure (secrets committed, no auth where needed, RLS off where needed, no backup/rollback) forces **BLOCKED** regardless of the average, and stale gate evidence (wrong commit/environment, expired) is rejected.
 
 ### Where to start (priority order)
 
@@ -121,13 +122,54 @@ From a local clone, in Claude Code:
 Or from GitHub:
 
 ```
-/plugin marketplace add your-username/solo-suite
+/plugin marketplace add unn0wn002/solo-suite
 /plugin install solo@solo-suite
 ```
 
-**Install `solo` first** — it owns the shared memory the others build on. Install only the plugins you want; each degrades gracefully if a sibling is missing.
+Want everything in one step? Install the **`full-team`** meta-plugin — it depends on all 17 component plugins:
 
-**Prefer no plugin?** Copy any `plugins/<name>/skills/<skill>/` folder into `~/.claude/skills/` (global) or `.claude/skills/` (per project).
+```
+/plugin install full-team@solo-suite
+```
+
+### Verify a published release
+
+A locally built bundle is an unsigned **release candidate**. Canonical release
+artifacts come from the tagged CI run and are attached to the matching GitHub
+Release. Download the complete asset set, including every matching
+`.sigstore.json` bundle. Verify the signed payload manifest before trusting its
+checksums, then verify every listed payload's own signature:
+
+```bash
+TAG=v1.0.23
+CANONICAL_REPO="$(gh api repos/unn0wn002/solo-suite --jq .full_name)"
+CERT_ID="https://github.com/${CANONICAL_REPO}/.github/workflows/ci.yml@refs/tags/${TAG}"
+ISSUER="https://token.actions.githubusercontent.com"
+printf 'Expected certificate identity: %s\n' "$CERT_ID"
+cosign verify-blob RELEASE-SHA256SUMS \
+  --bundle RELEASE-SHA256SUMS.sigstore.json \
+  --certificate-identity "$CERT_ID" \
+  --certificate-oidc-issuer "$ISSUER"
+sha256sum -c RELEASE-SHA256SUMS
+while read -r _digest payload; do
+  test -n "$payload" || continue
+  cosign verify-blob "$payload" \
+    --bundle "$payload.sigstore.json" \
+    --certificate-identity "$CERT_ID" \
+    --certificate-oidc-issuer "$ISSUER"
+done < RELEASE-SHA256SUMS
+```
+
+`gh api ... .full_name` supplies GitHub's canonical owner/repository casing;
+the expected identity is derived from that trusted repository metadata, never
+from the untrusted bundle being checked. `cosign` requires an exact identity
+match. A missing release asset, bundle, manifest entry, or failed checksum or
+signature leaves the release **UNVERIFIED**. Temporary GitHub Actions artifacts
+are not the canonical distribution channel.
+
+**Install `solo` first** (or `full-team`) — it owns the shared memory the others build on. Install only the plugins you want; each degrades gracefully if a sibling is missing.
+
+**Prefer no plugin?** Most skill folders (`plugins/<name>/skills/<skill>/`) can be copied into `~/.claude/skills/` (global) or `.claude/skills/` (per project) — **with one documented exception**: the **five** site-doctor skills whose helper scripts make network requests (`website-audit`, `compliance-check`, `email-deliverability`, `mobile-audit`, `seo-optimization`) share the SSRF guard `plugins/site-doctor/lib/url_guard.py` and are **not standalone**. (`dependency-audit` and `security-review` also bundle scripts, but those are offline filesystem tools with no url_guard dependency — they copy cleanly.) If you copy one of the five, copy `lib/url_guard.py` alongside it (the scripts resolve it three directories up: `<skill>/../../../lib/url_guard.py`) or install the site-doctor plugin instead. Helper commands use `${CLAUDE_PLUGIN_ROOT}` so they run from any working directory once installed; if `python3` is missing, use `python`.
 
 ---
 
@@ -162,7 +204,7 @@ Three commands bookend and drive your work, and every skill in the suite is wire
 
 - **`/solo:start-session`** — run it when you sit down. Reads all of `.solo/` and re-orients you in under a minute: where things stand, what's in flight, what's blocked, and the exact next task to do.
 - **`/solo:end-session`** — run it when you stop. Saves progress, records blockers, logs decisions, and rewrites the handoff ending with the next task — so the next start-session resumes instantly.
-- **`/solo:run-cycle`** — runs one complete development cycle for a single task, orchestrating every plugin in order: select → design (design) → implement (dev) → review (dev) → test (test) → audit (site-doctor) → document (docs) → save. It stops at any gate needing a human decision.
+- **`/solo:run-cycle`** — runs one complete development cycle for a single task, orchestrating the core plugins in order: select → design (design) → implement (dev) → review (dev) → test (test) → audit (site-doctor) → document (docs) → save. It stops at any gate needing a human decision.
 
 (`/solo:handoff-memory` is still there for mid-work checkpoints; `/solo:next-step` and `/solo:project-status` for a quick pointer or status roll-up.)
 
@@ -198,21 +240,4 @@ Each skill still works standalone if its counterparts aren't installed — it do
 /stack:intake           → record your tools                   (writes stack.md)
 /project:prd            → spec it, scoped to an MVP            (writes prd.md)
 /project:architecture   → design the build                    (writes architecture.md)
-/design:ux-flow         → map the key journeys                (writes design.md)
-/project:task-breakdown → ordered, right-sized tasks          (writes tasks.md)
-/dev:implement-feature  → build a task end to end             (updates tasks.md)
-/dev:code-review        → catch what you missed
-/test:edge-cases        → find what breaks
-/site-doctor:full-checkup → audit site + DB                   (fixes → tasks.md)
-/stack:audit-supabase   → vendor-specific deep check          (fixes → tasks.md)
-/release:preflight      → ship gate (drives site-doctor)
-/release:rollback-plan  → written before you deploy
-/docs:setup-guide       → so it's runnable by anyone
-/solo:handoff-memory    → save state for next session
-```
-
-Jump in wherever you are — the memory keeps everything consistent.
-
----
-
-*Everything one person needs to ship like a team.*
+/design:ux-flow

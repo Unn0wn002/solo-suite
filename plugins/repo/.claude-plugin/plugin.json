@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "repo",
-  "version": "1.0.2",
-  "description": "Repo intelligence: understand a codebase before editing it \u2014 structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
+  "displayName": "solo-suite repo",
+  "version": "1.0.3",
+  "description": "Repo intelligence: understand a codebase before editing it — structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "repo",
     "codebase",

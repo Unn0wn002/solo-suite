@@ -1,33 +1,64 @@
 {
   "schema": "solo-suite/agentroom-v1",
   "name": "production-release",
-  "version": 1,
-  "description": "Ship a release safely: preflight, deploy + rollback plans, docs, and the launch gate.",
-  "based_on_room": "Launch Room",
+  "version": 4,
+  "description": "Preflight + plans + monitoring -> deploy gate -> docs -> ORCHESTRATOR FREEZE (structured evidence.freeze contract) -> evidence finalizer -> OUTPUT-ONLY launch gate. Sequential room; each seat declares its real shared-memory writes. Earlier-phase artifacts it does not produce are explicit, documented assumptions.",
   "memory_dir": ".solo/",
+  "run": {
+    "id_prefix": "prl",
+    "id_required": true
+  },
   "rules": [
-    "one writer per artifact \u2014 two seats never edit the same .solo/ file or code area in the same stage",
-    "context is explicit \u2014 each seat reads only its listed files, plus .solo/handoff.md",
-    "every seat ends with a handoff checked by /ai:handoff-check before the next stage starts",
-    "route models with /ai:compare-models; audit generated code with /ai:review-output",
-    "no evidence, no finding \u2014 audits follow the evidence-based output format"
+    "sequential stages — one seat active at a time, all shared-memory writes declared",
+    "nothing ships while /gate:before-deploy is NO-GO or /gate:production-ready is BLOCKED",
+    "EVIDENCE LIFECYCLE: specialists produce raw artifacts and N/A candidates only — NO seat writes .solo/gate-evidence/ records mid-flow. After the docs stage the ORCHESTRATOR performs the structured freeze (evidence.freeze): commits every tracked release/docs/project-memory change, verifies a clean tree, and records FINAL_SHA with the gate plugin's update_run_state.py helper (run-state-v1 contract — SHA derived from git rev-parse HEAD by the helper, monotonic transitions, final_sha frozen once set) in untracked .solo/run-state/<run_id>.json. Only the evidence_finalizer mints all 14 records at FINAL_SHA via /gate:finalize-evidence (verified through record_evidence.py, or matrix-permitted N/A); the gatekeeper verifies the FULL set with check_evidence.py (exactly one accepted record per category, recomputed digests, stale/foreign records rejected) and is OUTPUT-ONLY — zero tracked writes after the freeze",
+    "vendor-specific checks run only for providers recorded in .solo/stack.md"
   ],
   "stages": [
-    [
-      "release"
-    ],
-    [
-      "docs"
-    ],
-    [
-      "gatekeeper"
-    ]
+    {
+      "id": "release",
+      "seats": [
+        "release"
+      ]
+    },
+    {
+      "id": "docs",
+      "seats": [
+        "docs"
+      ]
+    },
+    {
+      "id": "finalize",
+      "seats": [
+        "evidence_finalizer"
+      ]
+    },
+    {
+      "id": "gate",
+      "seats": [
+        "gatekeeper"
+      ]
+    }
   ],
+  "assumes_preexisting": {
+    ".solo/prd.md": "produced by the PRD phase of an earlier room/session; this room only ships",
+    ".solo/architecture.md": "produced by the architecture phase of an earlier room/session",
+    ".solo/design.md": "produced by the design phase of an earlier room/session",
+    ".solo/data-contract.md": "produced by the contracts phase of an earlier room/session",
+    ".solo/decisions.md": "accumulated by earlier build/review phases",
+    ".solo/tests.md": "produced by the QA phase of an earlier room/session",
+    ".solo/bugs.md": "produced by the browser-QA phase of an earlier room/session",
+    ".solo/tasks.md": "accumulated across earlier phases",
+    ".solo/risks.md": "produced by the security phase of an earlier room/session",
+    ".solo/project.md": "project profile recorded by an earlier intake session; read by the finalizer (N/A matrix) and never produced by this room",
+    ".solo/env-contract.md": "produced by the contracts phase of an earlier room/session; read by the release seat",
+    ".solo/api-contract.md": "produced by the contracts phase of an earlier room/session; read by the docs seat"
+  },
   "seats": [
     {
       "id": "release",
-      "role": "DevOps",
-      "model_hint": "balanced",
+      "role": "DevOps + Release Manager",
+      "model_hint": "deep-reasoning",
       "reads": [
         ".solo/env-contract.md",
         ".solo/tests.md",
@@ -35,8 +66,14 @@
       ],
       "writes": [
         ".solo/release.md",
-        ".solo/monitoring.md"
+        ".solo/monitoring.md",
+        ".solo/tasks.md",
+        ".solo/decisions.md",
+        ".solo/handoff.md",
+        ".solo/risks.md"
       ],
+      "agent": "room-release-manager",
+      "agent_note": "one seat covers the DevOps and Release Manager duties in this compact room",
       "commands": [
         "/release:preflight",
         "/release:deploy-plan",
@@ -44,53 +81,142 @@
         "/site-doctor:monitoring",
         "/gate:before-deploy"
       ],
-      "deliverable": "Preflight PASS + deploy & rollback plans in .solo/release.md, monitoring recorded in .solo/monitoring.md, before-deploy GO",
+      "deliverable": "Preflight + deploy/rollback plans in release.md, monitoring recorded, before-deploy gate GO — raw artifacts only; NO gate-evidence records (the evidence finalizer mints all 14 at FINAL_SHA)",
       "handoff_to": "docs",
       "handoff_check": "/ai:handoff-check"
     },
     {
       "id": "docs",
       "role": "Documentation Writer",
-      "model_hint": "fast",
+      "model_hint": "balanced",
       "reads": [
         ".solo/release.md",
         ".solo/api-contract.md"
       ],
       "writes": [
-        "README/docs"
+        "docs/ (repo documentation)",
+        ".solo/handoff.md"
       ],
+      "agent": "room-documentation-writer",
       "commands": [
         "/docs:update",
         "/docs:setup-guide",
         "/docs:runbook",
         "/git:release-notes"
       ],
-      "deliverable": "Docs current + user-facing and technical release notes",
-      "handoff_to": "gatekeeper",
+      "deliverable": "Docs + release notes matched to what ships (runs AFTER release.md exists); completion noted in the handoff — raw artifacts only; no gate-evidence record (all records are minted later by the evidence finalizer, never by this seat)",
+      "handoff_to": "evidence_finalizer",
       "handoff_check": "/ai:handoff-check"
     },
     {
-      "id": "gatekeeper",
-      "role": "Launch Gatekeeper",
-      "model_hint": "deep-reasoning",
+      "id": "evidence_finalizer",
+      "role": "Evidence Finalizer",
+      "model_hint": "balanced",
       "reads": [
-        ".solo/release.md",
-        ".solo/monitoring.md",
-        ".solo/risks.md"
+        ".solo/handoff.md",
+        ".solo/project.md",
+        ".solo/run-state/<run_id>.json"
       ],
       "writes": [
-        ".solo/risks.md",
-        ".solo/handoff.md"
+        ".solo/gate-evidence/product.json",
+        ".solo/gate-evidence/architecture.json",
+        ".solo/gate-evidence/design.json",
+        ".solo/gate-evidence/frontend.json",
+        ".solo/gate-evidence/backend.json",
+        ".solo/gate-evidence/database.json",
+        ".solo/gate-evidence/security.json",
+        ".solo/gate-evidence/testing.json",
+        ".solo/gate-evidence/performance.json",
+        ".solo/gate-evidence/seo.json",
+        ".solo/gate-evidence/analytics.json",
+        ".solo/gate-evidence/deployment.json",
+        ".solo/gate-evidence/monitoring.json",
+        ".solo/gate-evidence/documentation.json"
       ],
+      "agent_note": "mechanical re-execution of every category command at FINAL_SHA via record_evidence.py — a disciplined executor, not a persona; runs /gate:finalize-evidence and nothing else",
       "commands": [
-        "/gate:production-ready",
-        "/solo:handoff-memory"
+        "/gate:finalize-evidence"
       ],
-      "deliverable": "Score /100 + Launch Status + saved handoff",
+      "deliverable": "Verifies HEAD equals the FINAL_SHA recorded in UNTRACKED .solo/run-state/<run_id>.json (run-state-v1, written by update_run_state.py; verified mechanically with `update_run_state.py verify final`) by the orchestrator's freeze (never a tracked file), then produces ALL 14 gate-evidence records against it (verified via record_evidence.py, or matrix-permitted N/A via record_evidence.py --not-applicable) — no record exists from any earlier, intermediate commit; refuses to change anything tracked",
+      "handoff_to": "gatekeeper",
+      "handoff_check": "/ai:handoff-check",
+      "agent": "room-evidence-finalizer"
+    },
+    {
+      "id": "gatekeeper",
+      "role": "Production Gatekeeper",
+      "model_hint": "deep-reasoning",
+      "reads": [
+        ".solo/architecture.md",
+        ".solo/bugs.md",
+        ".solo/data-contract.md",
+        ".solo/decisions.md",
+        ".solo/design.md",
+        ".solo/gate-evidence/*.json",
+        ".solo/handoff.md",
+        ".solo/monitoring.md",
+        ".solo/prd.md",
+        ".solo/release.md",
+        ".solo/risks.md",
+        ".solo/tasks.md",
+        ".solo/tests.md",
+        ".solo/run-state/<run_id>.json"
+      ],
+      "writes": [],
+      "agent": "room-production-gatekeeper",
+      "commands": [
+        "/gate:production-ready"
+      ],
+      "deliverable": "OUTPUT-ONLY after finalization: verifies HEAD equals FINAL_SHA from untracked .solo/run-state/<run_id>.json, runs check_evidence.py (self-derived HEAD), issues the verdict in output — zero tracked writes",
       "handoff_to": null,
       "handoff_check": "/ai:handoff-check"
     }
   ],
   "exit_gate": "/gate:production-ready",
-  "exit_criteria": "before-deploy returned GO and production-ready is not BLOCKED"
+  "gate_requires": [
+    ".solo/architecture.md",
+    ".solo/bugs.md",
+    ".solo/data-contract.md",
+    ".solo/decisions.md",
+    ".solo/design.md",
+    ".solo/gate-evidence/*.json",
+    ".solo/handoff.md",
+    ".solo/monitoring.md",
+    ".solo/prd.md",
+    ".solo/release.md",
+    ".solo/risks.md",
+    ".solo/tasks.md",
+    ".solo/tests.md"
+  ],
+  "gate_evidence_map": {
+    "product": ".solo/prd.md",
+    "architecture": ".solo/architecture.md",
+    "design": ".solo/design.md",
+    "frontend": ".solo/bugs.md",
+    "backend": ".solo/decisions.md",
+    "database": ".solo/data-contract.md",
+    "security": ".solo/risks.md",
+    "testing": ".solo/tests.md",
+    "performance": ".solo/tasks.md",
+    "seo": ".solo/tasks.md",
+    "analytics": ".solo/tasks.md",
+    "deployment": ".solo/release.md",
+    "monitoring": ".solo/monitoring.md",
+    "documentation": ".solo/handoff.md"
+  },
+  "exit_criteria": "check_evidence.py exits 0 at the current commit + environment and the production-ready gate returns SAFE TO LAUNCH (or SAFE WITH WARNINGS explicitly accepted); handoff saved",
+  "evidence": {
+    "finalizer": "evidence_finalizer",
+    "freeze": {
+      "producer": "orchestrator",
+      "after_stage": "docs",
+      "before_stage": "finalize",
+      "commits": "all tracked release/docs/project-memory changes (release.md, monitoring.md, docs/, handoff/tasks/decisions/risks) in ONE freeze commit",
+      "verifies": "git status --porcelain is empty outside the untracked runtime dirs (.solo/gate-evidence/, .solo/run-state/) — a dirty tree aborts the freeze",
+      "records": "FINAL_SHA of the freeze commit, recorded with update_run_state.py advance final — the helper derives it from git rev-parse HEAD itself (run-state-v1; monotonic; frozen once set)",
+      "stored_in": ".solo/run-state/<run_id>.json"
+    },
+    "final_sha_recorded_in": ".solo/run-state/<run_id>.json",
+    "workflow": "untracked"
+  }
 }

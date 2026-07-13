@@ -1,27 +1,737 @@
 name: tests
+
 on:
   push:
   pull_request:
 
-env:
-  PYTHONUTF8: "1"
+# Least privilege by default. Tag releases use three isolated stages: a
+# read-only build, an OIDC-only signer, and a contents-write-only publisher.
+# No job ever holds both id-token:write and contents:write.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
+    name: test (${{ matrix.os }}, py${{ matrix.python_version }}, ${{ matrix.encoding_mode }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
-        python-version: ["3.9", "3.12"]
+        include:
+          - os: ubuntu-latest
+            python_version: "3.9"
+            encoding_mode: utf8
+            python_utf8: "1"
+          - os: ubuntu-latest
+            python_version: "3.12"
+            encoding_mode: utf8
+            python_utf8: "1"
+          - os: windows-latest
+            python_version: "3.9"
+            encoding_mode: utf8
+            python_utf8: "1"
+          - os: windows-latest
+            python_version: "3.12"
+            encoding_mode: utf8
+            python_utf8: "1"
+          - os: windows-latest
+            python_version: "3.12"
+            encoding_mode: windows-default
+            python_utf8: "0"
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    env:
+      # Explicitly OFF in the windows-default leg. This job does not inherit
+      # a workflow-level PYTHONUTF8=1 mask.
+      PYTHONUTF8: ${{ matrix.python_utf8 }}
+      # `runner` is unavailable in job-level env expressions. Keep bytecode
+      # outside the checkout using the job-level-safe `github` context.
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/../solo-suite-pycache
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      # Pinned to commit SHAs (tag comments for humans). Re-verify pins when
+      # bumping: https://github.com/actions/checkout / actions/setup-python
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          python-version: ${{ matrix.python-version }}
-      - name: Offline regression tests (loopback fixtures only - no external network)
-        run: python -m unittest discover -s tests -t . -v
-      - name: Suite self-check (12 checks)
+          persist-credentials: false
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: ${{ matrix.python_version }}
+      # Claude CLI 2.1.205 requires Node >= 22 — Node 20 is NOT sufficient.
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Install integrity-locked Claude CLI without lifecycle scripts (official validation is REQUIRED)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm ci --prefix release/claude-cli --ignore-scripts --no-audit --no-fund
+          CLI_PLATFORM="$(node -p 'process.platform')"
+          CLI_ARCH="$(node -p 'process.arch')"
+          CLI_DIR="$(cd "release/claude-cli/node_modules/@anthropic-ai/claude-code-${CLI_PLATFORM}-${CLI_ARCH}" && pwd -P)"
+          test -f "$CLI_DIR/claude" || test -f "$CLI_DIR/claude.exe" || {
+            echo "FATAL: locked native Claude CLI binary is missing"; exit 1;
+          }
+          echo "$CLI_DIR" >> "$GITHUB_PATH"
+          export PATH="$CLI_DIR:$PATH"
+          claude --version
+
+      - name: Install HASH-LOCKED CI test deps (requirements-dev.lock, --require-hashes; runtime needs stdlib only)
+        run: python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Byte-compile every Python helper with SyntaxWarning AS ERROR
+        run: python -W error::SyntaxWarning -m compileall -q -f plugins tests release
+
+      - name: Offline regression tests in UTF-8 mode (loopback fixtures only; ResourceWarning AS ERROR)
+        if: matrix.encoding_mode == 'utf8'
+        run: python -W error::ResourceWarning -m unittest discover -s tests -t . -v
+
+      - name: Offline regression tests in Windows CP1252/default mode (no UTF-8 mask)
+        if: matrix.encoding_mode == 'windows-default'
+        shell: pwsh
+        env:
+          PYTHONUTF8: "0"
+          PYTHONIOENCODING: "cp1252"
+        run: |
+          if ($env:PYTHONUTF8 -ne "0") { throw "PYTHONUTF8 must be explicitly disabled" }
+          if ($env:PYTHONIOENCODING -ne "cp1252") { throw "CP1252 boundary is not active" }
+          python -c "import sys; print('stdout encoding=' + str(sys.stdout.encoding)); assert sys.stdout.encoding.lower().replace('-', '') == 'cp1252'"
+          python -W error::ResourceWarning -m unittest discover -s tests -t . -v
+
+      - name: Offline regression tests WITHOUT jsonschema (builtin schema evaluator path - rooms + gate)
+        shell: bash
+        run: |
+          python -m pip uninstall --quiet -y jsonschema
+          python -W error::ResourceWarning -m unittest tests.test_validate_rooms tests.test_gate_evidence tests.test_gate_policy -v
+          python -m pip install --require-hashes -r requirements-dev.lock
+
+      - name: Coverage (best effort - informational; pinned via ci-requirements.txt)
+        shell: bash
+        continue-on-error: true
+        env:
+          COVERAGE_FILE: ${{ runner.temp }}/solo-suite.coverage
+        run: |
+          python -m coverage run -m unittest discover -s tests -t .
+          python -m coverage report --include="plugins/*,tests/*" | tail -25
+
+      - name: Secret-output regression tests (scanner must never leak values)
+        run: python -W error::ResourceWarning -m unittest tests.test_scan_secrets -v
+
+      - name: Installed-CWD helper tests (helpers must work outside the plugin dir)
+        run: python -W error::ResourceWarning -m unittest tests.test_installed_cwd -v
+
+      - name: Security self-scan (redacted findings only; own rules suppressed; incomplete coverage fails)
+        shell: bash
+        run: |
+          SCAN_JSON="$RUNNER_TEMP/solo-suite-scan.json"
+          set +e
+          python plugins/site-doctor/skills/security-review/scripts/scan_secrets.py . --json > "$SCAN_JSON"; rc=$?
+          set -e
+          if [ "$rc" = "2" ] || [ "$rc" = "3" ]; then echo "FATAL: scanner usage error or INCOMPLETE coverage (rc=$rc)"; exit 1; fi
+          python - "$SCAN_JSON" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as fh:
+              data = json.load(fh)
+          assert data["coverage"]["complete"], "self-scan coverage incomplete: %s" % data["coverage"]
+          real = [f for f in data["findings"] if not f["placeholder_hint"]
+                  and not f["path"].startswith("tests/")]
+          for f in real:
+              print("FINDING:", f["path"], f["line"], f["rule"], f["preview"])
+          sys.exit(1 if real else 0)
+          PY
+
+      - name: Suite self-check (static structure - source-checkout mode)
         run: python plugins/solo/skills/suite-integrity/scripts/self_check.py . -
-      - name: AgentRooms static validation
+
+      - name: Suite self-check (installed-plugin mode, every plugin directory)
+        shell: bash
+        run: |
+          rc=0
+          for d in plugins/*/; do
+            python plugins/solo/skills/suite-integrity/scripts/self_check.py "$d" - || rc=1
+          done
+          exit $rc
+
+      - name: AgentRooms static validation (JSON Schema first, then semantics)
         run: python plugins/ai/skills/agent-room-templates/scripts/validate_rooms.py
+
+      - name: Read-only DB audit policy check
+        run: python -W error::ResourceWarning -m unittest tests.test_readonly_audit -v
+
+      - name: MANDATORY adversarial acceptance suites (gate policy, evidence lifecycle, recorder, checker, scanner coverage, header values, room bypasses)
+        run: python -W error::ResourceWarning -m unittest tests.test_gate_policy tests.test_record_evidence tests.test_evidence_lifecycle tests.test_gate_evidence tests.test_scan_secrets tests.test_check_headers tests.test_validate_rooms tests.test_semantic_regressions -v
+
+      - name: Reproducible release-set check (ZIP, checksums, SBOM, and provenance are byte-identical)
+        run: |
+          python -c "exec(r'''import glob, hashlib, os, subprocess, sys, tempfile
+          with tempfile.TemporaryDirectory(prefix='solo-suite-repro-') as tmp:
+              first, second = os.path.join(tmp, 'first'), os.path.join(tmp, 'second')
+              subprocess.check_call([sys.executable, 'release/build_release.py', '--out', first])
+              subprocess.check_call([sys.executable, 'release/build_release.py', '--out', second])
+              zip_name = os.path.basename(glob.glob(os.path.join(first, '*.zip'))[0])
+              for name in (zip_name, 'SHA256SUMS', 'sbom.json', 'provenance.json'):
+                  with open(os.path.join(first, name), 'rb') as fa, open(os.path.join(second, name), 'rb') as fb:
+                      left, right = fa.read(), fb.read()
+                  ha, hb = hashlib.sha256(left).hexdigest(), hashlib.sha256(right).hexdigest()
+                  assert left == right, '%s differs: %s vs %s' % (name, ha, hb)
+                  print('reproducible:', name, ha)
+          ''')"
+
+      - name: Official plugin validation of the SOURCE CHECKOUT (labelled honestly - the packaged ZIP is validated separately below)
+        shell: bash
+        run: |
+          command -v claude >/dev/null 2>&1 || { echo "FATAL: claude CLI missing - official validation cannot run"; exit 1; }
+          claude plugin validate .
+          for d in plugins/*/; do claude plugin validate "$d" --strict; done
+
+      - name: Package release from a clean checkout and ALLOWLISTED staging directory
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/solo-suite-scan.json" || { echo "FATAL: scan output missing"; exit 1; }
+          test -f "$RUNNER_TEMP/solo-suite.coverage" || echo "note: coverage data absent (best-effort step)"
+          python release/build_release.py --out dist
+          python - <<'PY'
+          import glob, zipfile
+          zpath = glob.glob("dist/solo-suite-plugin-v*.zip")[0]
+          with zipfile.ZipFile(zpath) as z:
+              names = z.namelist()
+          for bad in (".coverage", "scan.json", "__pycache__", ".pyc",
+                      ".pytest_cache", "node_modules"):
+              offenders = [n for n in names if bad in n]
+              assert not offenders, "FORBIDDEN in package: %s" % offenders[:5]
+          print("package excludes runner artifacts: OK (%d files)" % len(names))
+          PY
+
+      - name: PACKAGED-ZIP validation + marketplace/install smoke test (operates on the EXTRACTED ZIP, not the source tree)
+        shell: bash
+        env:
+          REPO_DIR: ${{ github.workspace }}
+        run: |
+          command -v claude >/dev/null 2>&1 || { echo "FATAL: claude CLI missing"; exit 1; }
+          EXTRACT="$(mktemp -d)"
+          python - "$EXTRACT" <<'PY'
+          import glob, sys, zipfile
+          zpath = glob.glob("dist/solo-suite-plugin-v*.zip")[0]
+          with zipfile.ZipFile(zpath) as z:
+              tops = {n.split("/")[0] for n in z.namelist()}
+              assert len(tops) == 1, "ZIP must have ONE enclosing top-level folder: %s" % tops
+              z.extractall(sys.argv[1])
+          print("extracted", zpath, "->", sys.argv[1])
+          PY
+          ROOT="$(ls -d "$EXTRACT"/*/)"
+          echo "packaged root: $ROOT"
+          # 1. official validation of the EXTRACTED root + strict validation of all 18 plugin dirs
+          claude plugin validate "$ROOT"
+          n=0
+          for d in "$ROOT"plugins/*/; do claude plugin validate "$d" --strict; n=$((n+1)); done
+          [ "$n" = "18" ] || { echo "FATAL: expected 18 plugin dirs in the package, found $n"; exit 1; }
+          # 2. marketplace add AGAINST THE EXTRACTED ROOT + install + verify
+          CLAUDE_CONFIG_DIR="$(mktemp -d)"
+          export CLAUDE_CONFIG_DIR
+          SMOKE_PROJ="$(mktemp -d)"
+          cd "$SMOKE_PROJ"
+          claude plugin marketplace add "$ROOT"
+          claude plugin install solo@solo-suite
+          claude plugin install full-team@solo-suite   # must pull all 16 remaining deps
+          claude plugin marketplace list | tee marketplace.txt
+          grep -q "solo-suite" marketplace.txt
+          claude plugin list | tee plugins.txt
+          for p in solo stack project design dev test release docs site-doctor git spec repo security browser gate ai growth full-team; do
+            grep -q "$p@solo-suite" plugins.txt || { echo "FATAL: $p not installed from the packaged ZIP"; exit 1; }
+          done
+          # 3. plugin details for every one of the 18
+          for p in solo stack project design dev test release docs site-doctor git spec repo security browser gate ai growth full-team; do
+            claude plugin details "$p@solo-suite" > /dev/null || { echo "FATAL: details failed for $p"; exit 1; }
+          done
+          echo "PACKAGED-ZIP marketplace validation passed (18/18 validated, installed, details OK)"
+
+      - name: Packaged-ZIP self-check + helper smoke test from a foreign CWD
+        shell: bash
+        run: |
+          python - <<'PY'
+          import glob, os, subprocess, sys, tempfile, zipfile
+          zpath = glob.glob("dist/solo-suite-plugin-v*.zip")[0]
+          tmp = tempfile.mkdtemp(prefix="install-smoke-")
+          with zipfile.ZipFile(zpath) as z:
+              names = z.namelist()
+              top = {n.split("/")[0] for n in names}
+              assert len(top) == 1, "ZIP must have ONE enclosing top-level folder: %s" % top
+              z.extractall(tmp)
+          root = os.path.join(tmp, top.pop())
+          proj = tempfile.mkdtemp(prefix="user-project-")
+          # self-check the extracted suite from a foreign CWD
+          r = subprocess.run([sys.executable,
+              os.path.join(root, "plugins", "solo", "skills", "suite-integrity",
+                           "scripts", "self_check.py"), root, "-"],
+              cwd=proj, capture_output=True, text=True)
+          sys.stdout.write(r.stdout[-2000:])
+          assert r.returncode == 0, "self-check failed on packaged suite"
+          # helper must run from the foreign CWD via its absolute (plugin-root) path
+          r = subprocess.run([sys.executable,
+              os.path.join(root, "plugins", "site-doctor", "skills",
+                           "website-audit", "scripts", "check_headers.py"),
+              "https://10.0.0.1/"], cwd=proj, capture_output=True, text=True)
+          assert r.returncode == 2 and "BLOCKED" in r.stdout, r.stdout + r.stderr
+          print("packaged-ZIP self-check + helper smoke test passed")
+          PY
+
+  release-build:
+    # This stage has read-only repository access. It is the only release stage
+    # that checks out or executes repository code.
+    name: build and validate canonical tag release
+    needs: test
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    env:
+      PYTHONUTF8: "1"
+      # `runner` is unavailable in job-level env expressions. Keep bytecode
+      # outside the pristine tagged checkout used by the release builder.
+      PYTHONPYCACHEPREFIX: ${{ github.workspace }}/../solo-suite-pycache
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@0b93645e9fea7318ecaed2b359559ac225c90a2b # v5.3.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: "22"
+
+      - name: Verify annotated tag and release version before any build
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "FATAL: release tag must match strict v<major>.<minor>.<patch>"; exit 1;
+          fi
+          # actions/checkout resolves a tag event to GITHUB_SHA and may then
+          # replace the local annotated-tag ref with that peeled commit. Fetch
+          # the exact remote tag ref back before checking its object type.
+          git fetch --no-tags --force origin \
+            "refs/tags/${GITHUB_REF_NAME}:refs/tags/${GITHUB_REF_NAME}"
+          test "$(git cat-file -t "refs/tags/$GITHUB_REF_NAME")" = "tag" || {
+            echo "FATAL: canonical releases require an annotated tag"; exit 1;
+          }
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MARKET_VERSION="$(python - <<'PY'
+          import json
+          with open('.claude-plugin/marketplace.json', encoding='utf-8') as fh:
+              print(json.load(fh)['metadata']['version'])
+          PY
+          )"
+          test "$TAG_VERSION" = "$MARKET_VERSION" || {
+            echo "FATAL: tag $TAG_VERSION != marketplace $MARKET_VERSION"; exit 1;
+          }
+          test "$(git rev-list -n 1 "refs/tags/$GITHUB_REF_NAME")" = "$GITHUB_SHA" || {
+            echo "FATAL: tag does not resolve to the checked-out event commit"; exit 1;
+          }
+
+      - name: Install locked tools and build while the tagged checkout is pristine
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --require-hashes -r requirements-dev.lock 2>&1 | tee "$RUNNER_TEMP/dependency-install.log"
+          python -m pip check 2>&1 | tee "$RUNNER_TEMP/pip-check.log"
+          npm ci --prefix release/claude-cli --ignore-scripts --no-audit --no-fund 2>&1 | tee "$RUNNER_TEMP/claude-install.log"
+          CLI_PLATFORM="$(node -p 'process.platform')"
+          CLI_ARCH="$(node -p 'process.arch')"
+          CLI_DIR="$(cd "release/claude-cli/node_modules/@anthropic-ai/claude-code-${CLI_PLATFORM}-${CLI_ARCH}" && pwd -P)"
+          test -f "$CLI_DIR/claude" || test -f "$CLI_DIR/claude.exe" || {
+            echo "FATAL: locked native Claude CLI binary is missing"; exit 1;
+          }
+          echo "$CLI_DIR" >> "$GITHUB_PATH"
+          export PATH="$CLI_DIR:$PATH"
+          claude --version 2>&1 | tee "$RUNNER_TEMP/claude-version.log"
+          SOLO_NODE_VERSION="$(node --version)"
+          SOLO_CLAUDE_CLI_VERSION="$(claude --version | head -n 1)"
+          export SOLO_NODE_VERSION SOLO_CLAUDE_CLI_VERSION
+          python release/build_release.py --out dist > "$RUNNER_TEMP/build-release.log" 2>&1
+          cat "$RUNNER_TEMP/build-release.log"
+
+      - name: Collect build-environment logs without rebuilding
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/logs
+          cp "$RUNNER_TEMP/build-release.log" dist/logs/build-release.log
+          cp "$RUNNER_TEMP/dependency-install.log" dist/logs/dependency-install.log
+          cp "$RUNNER_TEMP/pip-check.log" dist/logs/pip-check.log
+          cp "$RUNNER_TEMP/claude-install.log" dist/logs/claude-install.log
+          cp "$RUNNER_TEMP/claude-version.log" dist/logs/claude-version.log
+
+      - name: Re-run canonical tag validation and retain raw logs
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -W error::SyntaxWarning -m compileall -q -f plugins tests release 2>&1 | tee dist/logs/compileall.log
+          python -W error::ResourceWarning -m unittest discover -s tests -t . -v 2>&1 | tee dist/logs/unittest.log
+          python plugins/solo/skills/suite-integrity/scripts/self_check.py . - 2>&1 | tee dist/logs/self-check.log
+          python plugins/ai/skills/agent-room-templates/scripts/validate_rooms.py 2>&1 | tee dist/logs/agentrooms.log
+          {
+            claude plugin validate .
+            count=0
+            for d in plugins/*/; do
+              claude plugin validate "$d" --strict
+              count=$((count+1))
+            done
+            test "$count" = "18"
+          } 2>&1 | tee dist/logs/claude-validation.log
+
+      - name: Record changed files from the previous release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Failed tags remain immutable and therefore must not silently become
+          # the next delta baseline. The reviewed inventory is the single
+          # source of truth; it is refreshed only from a verified release tree.
+          PREVIOUS_VERSION="$(python - <<'PY'
+          import json
+          import os
+          import re
+
+          numeric = r"(0|[1-9][0-9]*)"
+          pattern = re.compile(r"^%s\.%s\.%s$" % (numeric, numeric, numeric))
+
+          def parse(value, label):
+              if not isinstance(value, str):
+                  raise SystemExit("FATAL: %s version is not a string" % label)
+              match = pattern.fullmatch(value)
+              if match is None:
+                  raise SystemExit("FATAL: %s version is not strict semver" % label)
+              return tuple(map(int, match.groups()))
+
+          current_name = os.environ["GITHUB_REF_NAME"]
+          if not current_name.startswith("v"):
+              raise SystemExit("FATAL: current tag has no v prefix")
+          current = parse(current_name[1:], "current tag")
+          with open("release/previous-release-inventory.json", encoding="utf-8") as stream:
+              previous_name = json.load(stream)["release"]
+          previous = parse(previous_name, "inventory baseline")
+          if previous >= current:
+              raise SystemExit("FATAL: inventory baseline is not lower than current tag")
+          print(previous_name)
+          PY
+          )"
+          PREVIOUS_TAG="v${PREVIOUS_VERSION}"
+          git fetch --no-tags --force origin \
+            "refs/tags/${PREVIOUS_TAG}:refs/tags/${PREVIOUS_TAG}"
+          test "$(git cat-file -t "refs/tags/$PREVIOUS_TAG")" = "tag" || {
+            echo "FATAL: previous release tag must be annotated: $PREVIOUS_TAG"; exit 1;
+          }
+          CURRENT_VERSION="${GITHUB_REF_NAME#v}"
+          CHANGED="dist/changed_files_v${PREVIOUS_VERSION}_to_v${CURRENT_VERSION}.txt"
+          git diff --name-status --no-renames "$PREVIOUS_TAG" "$GITHUB_SHA" > "$CHANGED"
+          test -s "$CHANGED" || { echo "FATAL: changed-file report is empty"; exit 1; }
+          git diff --check "$PREVIOUS_TAG" "$GITHUB_SHA" 2>&1 | tee dist/logs/git-diff-check.log
+
+      - name: Validate canonical package and write an executed-only report
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY' 2>&1 | tee dist/logs/package-validation.log
+          import glob, hashlib, json, os, zipfile
+          paths = glob.glob('dist/solo-suite-plugin-v*.zip')
+          assert len(paths) == 1, paths
+          zpath = paths[0]
+          with open('dist/provenance.json', encoding='utf-8') as fh:
+              provenance = json.load(fh)
+          with open(zpath, 'rb') as fh:
+              digest = hashlib.sha256(fh.read()).hexdigest()
+          assert provenance['source_commit'] == os.environ['GITHUB_SHA']
+          assert provenance['source_dirty'] is False
+          assert provenance['artifact_sha256'] == digest
+          with zipfile.ZipFile(zpath) as zf:
+              names = zf.namelist()
+              assert len({name.split('/')[0] for name in names}) == 1
+              assert len(names) == len(set(names))
+              assert not [name for name in names if '..' in name.split('/')]
+          print('canonical package verified:', os.path.basename(zpath), digest)
+          PY
+          CURRENT_VERSION="${GITHUB_REF_NAME#v}"
+          cat > dist/VALIDATION-REPORT.md <<EOF
+          # Solo Suite v${CURRENT_VERSION} canonical tag validation
+
+          - Status: PASS
+          - Classification: EXECUTED by GitHub Actions from the exact annotated tag
+          - Tag: ${GITHUB_REF_NAME}
+          - Commit: ${GITHUB_SHA}
+          - Workflow identity: https://github.com/${GITHUB_REPOSITORY}/.github/workflows/ci.yml@${GITHUB_REF}
+          - Required test matrix: PASS (publication is gated by all test jobs)
+          - Locked dependency install and pip check: PASS
+          - Python compileall and full unit suite: PASS
+          - Suite self-check and AgentRooms validation: PASS
+          - Claude marketplace and 18 strict plugin validations: PASS
+          - Canonical package/provenance verification: PASS
+
+          Raw outputs produced again by this tag job are included in the signed
+          validation-logs ZIP. Live connectors, browser sessions, deployments,
+          and external APIs were not exercised and remain UNVERIFIED.
+          EOF
+
+      - name: Bundle raw validation logs as one deterministic root-level asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import datetime, json, os, shutil, stat, zipfile
+          with open('dist/provenance.json', encoding='utf-8') as fh:
+              provenance = json.load(fh)
+          version = provenance['version']
+          stamp = provenance['built_at'].replace('Z', '+00:00')
+          dt = datetime.datetime.fromisoformat(stamp).astimezone(datetime.timezone.utc)
+          date_time = (dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second)
+          logs_dir = 'dist/logs'
+          names = sorted(os.listdir(logs_dir))
+          assert names and all(os.path.isfile(os.path.join(logs_dir, name)) for name in names)
+          target = 'dist/validation-logs-v%s.zip' % version
+          assert not os.path.exists(target)
+          with zipfile.ZipFile(target, 'w', zipfile.ZIP_DEFLATED) as archive:
+              for name in names:
+                  with open(os.path.join(logs_dir, name), 'rb') as fh:
+                      data = fh.read()
+                  info = zipfile.ZipInfo('logs/' + name, date_time=date_time)
+                  info.compress_type = zipfile.ZIP_DEFLATED
+                  info.create_system = 3
+                  info.external_attr = (stat.S_IFREG | 0o644) << 16
+                  archive.writestr(info, data, compresslevel=9)
+          shutil.rmtree(logs_dir)
+          print('bundled validation logs:', target, len(names))
+          PY
+          if find dist -mindepth 2 -type f -print -quit | grep -q .; then
+            echo "FATAL: nested release payload remains after log bundling"
+            exit 1
+          fi
+
+      - name: Create complete payload checksum manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f dist/RELEASE-SHA256SUMS
+          while IFS= read -r -d '' file; do
+            rel="${file#dist/}"
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$rel"
+          done < <(find dist -type f ! -name 'RELEASE-SHA256SUMS' ! -name '*.sigstore.json' -print0 | sort -z) \
+            > dist/RELEASE-SHA256SUMS
+          test -s dist/RELEASE-SHA256SUMS
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
+
+      - name: Verify the unsigned artifact boundary before transfer
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -gt 6 || {
+            echo "FATAL: unsigned canonical release payload is incomplete"; exit 1;
+          }
+
+      - name: Transfer the checksummed unsigned bundle to the isolated signer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: solo-suite-${{ github.ref_name }}-unsigned-release
+          path: dist/
+          if-no-files-found: error
+
+  release-sign:
+    # This protected stage receives only the built artifact. It has no checkout,
+    # no repository execution, no package-manager install, and no write token.
+    name: keyless-sign canonical release artifact
+    needs: release-build
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: release-signing
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Download the exact unsigned build artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: solo-suite-${{ github.ref_name }}-unsigned-release
+          path: dist
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2 (cosign 3.0.6)
+
+      - name: Verify unsigned checksums at the signer boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
+          test "$(find dist -maxdepth 1 -type f | wc -l)" -gt 6 || {
+            echo "FATAL: downloaded unsigned release payload is incomplete"; exit 1;
+          }
+
+      - name: Keyless-sign every canonical payload and its complete manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            cosign sign-blob --yes "$file" --bundle "$file.sigstore.json"
+          done < <(find dist -type f ! -name '*.sigstore.json' -print0 | sort -z)
+
+      - name: Verify every signature fail-closed against this exact tag workflow identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=0
+          while IFS= read -r -d '' file; do
+            bundle="$file.sigstore.json"
+            test -f "$bundle" || { echo "FATAL: signature bundle missing for $file"; exit 1; }
+            cosign verify-blob "$file" --bundle "$bundle" \
+              --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            count=$((count+1))
+          done < <(find dist -type f ! -name '*.sigstore.json' -print0 | sort -z)
+          test "$count" -gt 6 || { echo "FATAL: canonical release payload is incomplete"; exit 1; }
+          echo "signed and verified $count canonical payload files"
+
+      - name: Create and sign the complete signed-bundle boundary manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f dist/SIGNED-BUNDLE-SHA256SUMS dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+          while IFS= read -r -d '' file; do
+            rel="${file#dist/}"
+            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$rel"
+          done < <(find dist -maxdepth 1 -type f ! -name 'SIGNED-BUNDLE-SHA256SUMS*' -print0 | sort -z) \
+            > dist/SIGNED-BUNDLE-SHA256SUMS
+          test -s dist/SIGNED-BUNDLE-SHA256SUMS
+          (cd dist && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
+          cosign sign-blob --yes dist/SIGNED-BUNDLE-SHA256SUMS \
+            --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+          cosign verify-blob dist/SIGNED-BUNDLE-SHA256SUMS \
+            --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json \
+            --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+      - name: Retain the complete signed bundle as an Actions artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: solo-suite-${{ github.ref_name }}-signed-release
+          path: dist/
+          if-no-files-found: error
+
+  release-publish:
+    # This protected stage has the only repository write token. It receives no
+    # OIDC token and executes no checked-out repository code.
+    name: verify and publish canonical release assets
+    needs: release-sign
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: release-publishing
+    permissions:
+      contents: write
+    steps:
+      - name: Download the exact signed release artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: solo-suite-${{ github.ref_name }}-signed-release
+          path: dist
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2 (cosign 3.0.6)
+
+      - name: Reverify checksums and signatures at the publisher boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
+          cosign verify-blob dist/SIGNED-BUNDLE-SHA256SUMS \
+            --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          (cd dist && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
+          count=0
+          while IFS= read -r -d '' file; do
+            bundle="$file.sigstore.json"
+            test -f "$bundle" || { echo "FATAL: signature bundle missing for $file"; exit 1; }
+            cosign verify-blob "$file" --bundle "$bundle" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            count=$((count+1))
+          done < <(find dist -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
+          test "$count" -gt 7 || { echo "FATAL: signed release payload is incomplete"; exit 1; }
+
+      - name: Publish the verified bundle as durable GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo "FATAL: GitHub Release already exists; refusing to overwrite assets"
+            exit 1
+          fi
+          mapfile -d '' assets < <(find dist -type f -print0 | sort -z)
+          test "${#assets[@]}" -gt 12 || { echo "FATAL: signed release asset set is incomplete"; exit 1; }
+          EXPECTED="$RUNNER_TEMP/expected-release-assets.txt"
+          printf '%s\n' "${assets[@]##*/}" | LC_ALL=C sort > "$EXPECTED"
+          test "$(uniq -d "$EXPECTED" | wc -l)" = "0" || {
+            echo "FATAL: duplicate asset basenames would collide on GitHub Releases"; exit 1;
+          }
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
+            --verify-tag \
+            --draft \
+            --title "Solo Suite $GITHUB_REF_NAME" \
+            --notes-file dist/VALIDATION-REPORT.md
+          gh release view "$GITHUB_REF_NAME" --json isDraft,assets > "$RUNNER_TEMP/release.json"
+          python - "$EXPECTED" "$RUNNER_TEMP/release.json" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding='utf-8') as fh:
+              expected = sorted(line.rstrip('\n') for line in fh if line.strip())
+          with open(sys.argv[2], encoding='utf-8') as fh:
+              release = json.load(fh)
+          actual = sorted(asset['name'] for asset in release['assets'])
+          assert release['isDraft'] is True, 'release must remain draft during verification'
+          assert actual == expected, 'remote draft asset set is incomplete or unexpected'
+          print('draft release asset set verified:', len(actual))
+          PY
+
+          # Asset metadata is not sufficient: fetch every remote object into a
+          # fresh directory, compare its bytes, then validate the downloaded
+          # manifests and Sigstore bundles before making the release public.
+          REMOTE_DIR="$(mktemp -d "$RUNNER_TEMP/solo-suite-remote-release.XXXXXX")"
+          gh release download "$GITHUB_REF_NAME" --dir "$REMOTE_DIR" --pattern '*'
+          find "$REMOTE_DIR" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort \
+            > "$RUNNER_TEMP/downloaded-release-assets.txt"
+          cmp --silent "$EXPECTED" "$RUNNER_TEMP/downloaded-release-assets.txt" || {
+            echo "FATAL: downloaded remote asset set differs from the signed local bundle"; exit 1;
+          }
+          while IFS= read -r -d '' local_file; do
+            name="$(basename "$local_file")"
+            remote_file="$REMOTE_DIR/$name"
+            test -f "$remote_file" || { echo "FATAL: remote asset missing: $name"; exit 1; }
+            cmp --silent "$local_file" "$remote_file" || {
+              echo "FATAL: remote asset bytes differ: $name"; exit 1;
+            }
+          done < <(find dist -maxdepth 1 -type f -print0 | sort -z)
+
+          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
+          cosign verify-blob "$REMOTE_DIR/SIGNED-BUNDLE-SHA256SUMS" \
+            --bundle "$REMOTE_DIR/SIGNED-BUNDLE-SHA256SUMS.sigstore.json" \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          (cd "$REMOTE_DIR" && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
+          (cd "$REMOTE_DIR" && sha256sum --check --strict RELEASE-SHA256SUMS)
+          remote_count=0
+          while IFS= read -r -d '' remote_file; do
+            bundle="$remote_file.sigstore.json"
+            test -f "$bundle" || { echo "FATAL: remote signature bundle missing for $remote_file"; exit 1; }
+            cosign verify-blob "$remote_file" --bundle "$bundle" \
+              --certificate-identity "$IDENTITY" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            remote_count=$((remote_count+1))
+          done < <(find "$REMOTE_DIR" -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
+          test "$remote_count" -gt 7 || { echo "FATAL: downloaded signed payload is incomplete"; exit 1; }
+
+          gh release edit "$GITHUB_REF_NAME" --draft=false
+          test "$(gh release view "$GITHUB_REF_NAME" --json isDraft --jq .isDraft)" = "false"

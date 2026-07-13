@@ -1,6 +1,6 @@
 ---
 description: Audit email deliverability - SPF, DKIM, DMARC, reverse DNS, reputation, spam triggers
-argument-hint: [domain] [optional dkim selector]
+argument-hint: "[domain] [optional dkim selector]"
 ---
 Use the email-deliverability skill for: $ARGUMENTS
 

@@ -1,6 +1,7 @@
 ---
 name: database-fix
 description: Safely apply database fixes in PostgreSQL, MySQL, or SQLite — add missing indexes without downtime, write reversible migrations, add constraints to existing data, backfill columns, deduplicate rows, and clean orphaned records. Use when the user says "fix the database issues", "add the missing indexes", "write a migration for", "clean up the orphaned rows", or wants any schema or data change applied from an audit or debug finding.
+disable-model-invocation: true
 ---
 
 # Database Fix
@@ -78,7 +79,17 @@ PRAGMA foreign_key_check;   -- must return zero rows
 Stay inside the shared dialect: `TEXT` + `CHECK (col IN (...))` instead of native ENUMs; UUIDs generated in the application, stored as TEXT; `TIMESTAMP DEFAULT CURRENT_TIMESTAMP`; no engine-specific index types in the portable core. Write the migration once, run it against all three engines in CI before calling it done — SQLite's ALTER limitations are usually what breaks first.
 
 ### Fix a slow query without touching the schema
-Order of attack: refresh statistics (`ANALYZE`) → add/adjust the index the plan is missing → rewrite the query (avoid `SELECT *`, avoid functions on indexed columns in WHERE, replace `OFFSET` pagination with keyset pagination) → only then consider denormalization or caching.
+
+## Maintenance statements (moved here from the read-only audit)
+
+`ANALYZE` and `PRAGMA optimize` (SQLite) refresh planner statistics — cheap, but they **write** to the database, so they run here and never inside database-audit. Before running either (or `VACUUM`/`REINDEX`):
+
+1. **Explicit confirmation** — state the exact statement, the target database, and that it mutates state; proceed only after the user confirms.
+2. **Backup verification** — confirm a restorable backup/snapshot exists and has been tested (see backup-recovery). "A backup probably exists" does not count.
+3. **Mutation warning** — on a busy production system `VACUUM` takes locks and `ANALYZE` changes plans; schedule accordingly.
+4. **Rollback guidance** — state how to undo or recover: restore from the verified backup; for plan regressions after `ANALYZE`, re-run `ANALYZE` after fixing data or use the engine's plan-management tools.
+
+Order of attack: refresh statistics (`ANALYZE` — see Maintenance statements above) → add/adjust the index the plan is missing → rewrite the query (avoid `SELECT *`, avoid functions on indexed columns in WHERE, replace `OFFSET` pagination with keyset pagination) → only then consider denormalization or caching.
 
 ## Deployment order for production changes
 
