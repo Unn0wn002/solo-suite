@@ -10,8 +10,10 @@ Rankings follow from three things search engines actually reward: they can **cra
 ## Run the meta extractor first
 
 ```bash
-python3 scripts/extract_meta.py https://example.com --max-pages 25
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/seo-optimization/scripts/extract_meta.py" https://example.com --max-pages 25
 ```
+> **Running helpers:** `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code to this plugin's installed root, so the command works from any working directory. If `python3` is not on PATH, use `python` (macOS/Linux/Windows) (Windows launcher) instead.
+
 Stdlib-only crawl that pulls titles, descriptions, canonicals, H1s, robots directives, OG tags, and structured-data presence per page, and flags duplicates and gaps. Use its table as the factual base, then apply judgment below.
 
 ## 1. Crawlability & Indexation (fix these first — nothing else matters if pages can't be indexed)
@@ -78,4 +80,4 @@ Before auditing or building, read `.solo/stack.md` if it exists — it records t
 
 ## Script safety (url_guard)
 
-The bundled script(s) route every outbound request through `plugins/site-doctor/lib/url_guard.py`: HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.
+The bundled script(s) route every outbound request through `${CLAUDE_PLUGIN_ROOT}/lib/url_guard.py` (shipped at `plugins/site-doctor/lib/url_guard.py` in the source tree): HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched.

@@ -14,5 +14,7 @@ It verifies: all plugin.json valid · every command has title/purpose/inputs/out
 
 Then interpret: group failures by cause, fix the mechanical ones (stale counts, dangling refs) immediately, and turn the rest into `.solo/tasks.md` entries. A clean run = the suite is healthy.
 
+State plainly in the summary that this is **static structure checking — a clean run is not proof of runtime health** (helpers are not executed against real targets; judgment quality is not validated). Supports installed-plugin mode when run inside a single plugin directory.
+
 ## Output
 End with the 7-part contract: **Summary · Findings/Work done · Risks · Required fixes · Suggested tasks** (→ `.solo/tasks.md`, stable T-IDs) **· Verification · Next command** (exact slash command).

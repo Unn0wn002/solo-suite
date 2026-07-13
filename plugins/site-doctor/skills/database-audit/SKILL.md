@@ -5,12 +5,18 @@ description: Audit a database for schema quality, missing or wasted indexes, slo
 
 # Database Audit
 
-An audit is read-only. Run only SELECTs, EXPLAINs, SHOWs, and PRAGMAs — never mutate data or schema while auditing, and prefer a read-only role or a recent snapshot for production databases. Findings get fixed later via the **database-fix** skill.
+An audit is read-only. Run only SELECTs, EXPLAINs, SHOWs, and **read-only** PRAGMAs (query form, never `PRAGMA x = value`, never `PRAGMA optimize`, never `ANALYZE`/`VACUUM`/`REINDEX`) — never mutate data, schema, or planner statistics while auditing, and prefer a read-only role or a recent snapshot for production databases. Findings get fixed later via the **database-fix** skill.
 
 ## Setup
 
 1. Identify the engine and version (`SELECT version();` / `SELECT sqlite_version();`) — the checks and queries differ per engine.
-2. Get access: connection string for PG/MySQL, file path for SQLite. If the user can't share access, ask for schema dumps (`pg_dump --schema-only`, `mysqldump --no-data`, `.schema`) plus the slow-query log and audit from those.
+2. Get access without collecting secrets in chat: for PG/MySQL request only
+   the **name** of an environment variable, client profile, local socket, or
+   secret-store reference, and confirm the resolved account is read-only.
+   Never ask for or repeat a credential-bearing connection string. For SQLite,
+   use a file path. If live access is unavailable, ask for schema dumps
+   (`pg_dump --schema-only`, `mysqldump --no-data`, `.schema`) plus a redacted
+   slow-query log and audit from those.
 3. Ask what the workload looks like (read-heavy web app? write-heavy ingest?) — a "missing index" on a table written 1000×/sec and read once/day is not a finding.
 
 **Ready-to-run queries for every check below live in `references/audit-queries.md`, grouped by engine. Open it and use those instead of writing queries from scratch.**

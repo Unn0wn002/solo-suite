@@ -1,6 +1,6 @@
 ---
 description: Audit or set up production observability - logging, error tracking, uptime, metrics, alerts
-argument-hint: [audit | setup] [site url or stack description]
+argument-hint: "[audit | setup] [site url or stack description]"
 ---
 Use the observability skill for: $ARGUMENTS
 

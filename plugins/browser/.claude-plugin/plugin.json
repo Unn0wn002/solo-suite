@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "browser",
-  "version": "1.0.2",
-  "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test.",
+  "displayName": "solo-suite browser",
+  "version": "1.1.1",
+  "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test. Safety contract: localhost/staging/test-tenant by default, synthetic data only, confirmation before production or side-effecting submissions; smoke-test and form-submit-test are manual-only.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "browser",
     "qa",

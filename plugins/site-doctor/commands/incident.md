@@ -1,6 +1,6 @@
 ---
 description: Build incident-response readiness or run/review an incident (runbooks, on-call, severity, postmortem)
-argument-hint: [readiness | active | postmortem] [context]
+argument-hint: "[readiness | active | postmortem] [context]"
 ---
 Use the incident-response skill for: $ARGUMENTS
 
