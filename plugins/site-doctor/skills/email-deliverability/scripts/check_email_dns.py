@@ -75,6 +75,64 @@ def check_mx(domain):
     print()
 
 
+# SPF mechanisms that each cost one DNS lookup (RFC 7208 §4.6.4); bare `a`
+# and `mx` count too. `include:` and `redirect=` recurse into the referenced
+# domain's OWN SPF record, so nested lookups are counted, with cycle
+# protection and a hard recursion cap.
+SPF_LOOKUP_RE = __import__("re").compile(
+    r"(?:^|\s)[+\-~?]?(include|redirect|exists|ptr|a|mx)(?=[:=/]|\s|$)",
+    __import__("re").I)
+
+
+def spf_record_for(domain):
+    txts = dns_query(domain, "TXT")
+    recs = [t for t in txts if t.lower().startswith("v=spf1")]
+    return recs[0] if recs else None
+
+
+def count_spf_lookups(domain, spf, _stack=None, _depth=0, _memo=None):
+    """Return (total_lookups, capped). RFC 7208 counts every EVALUATION of a
+    lookup-costing mechanism — so a branch referenced from two different
+    includes counts BOTH times (only a true cycle, i.e. a domain already on
+    the current recursion STACK, stops). capped=True means some part could
+    not be resolved (cycle/depth/missing record/macro), so the count is a
+    floor, never a proof of compliance."""
+    if _stack is None:
+        _stack = []
+    if _memo is None:
+        _memo = {}
+    if _depth > 20:
+        return 0, True
+    total, capped = 0, False
+    for m in SPF_LOOKUP_RE.finditer(spf or ""):
+        mech = m.group(1).lower()
+        total += 1
+        if mech in ("include", "redirect"):
+            rest = spf[m.end():]
+            target = rest[1:].split()[0].strip() if rest[:1] in (":", "=") else ""
+            target = target.strip('"')
+            if not target or "%" in target:   # macros — cannot resolve statically
+                capped = True
+                continue
+            key = target.lower()
+            if key in _stack:
+                capped = True                  # true cycle — floor only
+                continue
+            if key in _memo:                   # repeated branch: SAME cost again
+                sub, sub_capped = _memo[key]
+            else:
+                nested = spf_record_for(target)
+                if nested is None:
+                    capped = True
+                    continue
+                sub, sub_capped = count_spf_lookups(
+                    target, nested, _stack + [key], _depth + 1, _memo)
+                _memo[key] = (sub, sub_capped)
+            total += sub
+            capped = capped or sub_capped
+    return total, capped
+
+
 def check_spf(domain):
     print("SPF:")
     txts = dns_query(domain, "TXT")
@@ -99,15 +157,23 @@ def check_spf(domain):
                        "your sender list is confirmed complete")
     else:
         report("WARN", "no 'all' mechanism — add ~all or -all")
-    # DNS lookup count (rough): count include/a/mx/ptr/exists/redirect
-    import re
-    lookups = len(re.findall(r"\b(include|a|mx|ptr|exists|redirect)[:=]", spf))
+    lookups, capped = count_spf_lookups(domain, spf)
+    approx = "at least " if capped else ""
     if lookups > 10:
-        report("FAIL", f"~{lookups} DNS-lookup mechanisms — exceeds the SPF "
-                       "10-lookup limit and will break; flatten includes")
+        report("FAIL", f"{approx}{lookups} DNS-lookup mechanisms including "
+                       "nested includes — exceeds the SPF 10-lookup limit "
+                       "and will break; flatten includes")
     elif lookups >= 8:
-        report("WARN", f"~{lookups} DNS-lookup mechanisms — close to the "
-                       "10-lookup limit")
+        report("WARN", f"{approx}{lookups} DNS-lookup mechanisms including "
+                       "nested includes — close to the 10-lookup limit")
+    elif capped:
+        report("WARN", f"at least {lookups} DNS-lookup mechanisms, but the "
+                       "count is INCOMPLETE (unresolvable include/redirect, "
+                       "macro, or cycle) — cannot confirm the 10-lookup "
+                       "limit; never treat this as a pass")
+    else:
+        report("PASS", f"{lookups} DNS-lookup mechanism(s) incl. nested "
+                       "includes (limit 10)")
     print()
 
 
@@ -122,15 +188,34 @@ def check_dmarc(domain):
         return
     d = dmarc[0]
     report("PASS", f"DMARC present: {d}")
-    low = d.lower()
-    if "p=reject" in low:
+    # Exact tag=value parsing (RFC 7489): sp= must never masquerade as p=.
+    tags = {}
+    for part in d.split(";"):
+        part = part.strip()
+        if not part or "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        tags.setdefault(k.strip().lower(), v.strip())
+    policy = tags.get("p", "").lower()
+    if policy == "reject":
         report("PASS", "policy p=reject — strongest (failures blocked)")
-    elif "p=quarantine" in low:
+    elif policy == "quarantine":
         report("WARN", "policy p=quarantine — good; consider p=reject when ready")
-    elif "p=none" in low:
+    elif policy == "none":
         report("WARN", "policy p=none — MONITOR ONLY, no protection. "
                        "Progress to quarantine then reject.")
-    if "rua=" not in low:
+    elif not policy:
+        report("FAIL", "DMARC record has no base 'p=' policy tag — receivers "
+                       "treat it as invalid")
+    else:
+        report("FAIL", f"DMARC 'p={policy}' is not a valid policy "
+                       "(none/quarantine/reject)")
+    sp = tags.get("sp", "").lower()
+    if sp:
+        report("PASS" if sp == "reject" else "WARN",
+               f"subdomain policy sp={sp} (applies to SUBDOMAINS only — "
+               "it does not strengthen the base p= policy)")
+    if "rua" not in tags:
         report("WARN", "no 'rua=' reporting address — you won't receive "
                        "aggregate reports; add one to see what's failing")
     print()

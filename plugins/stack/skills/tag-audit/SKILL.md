@@ -46,7 +46,10 @@ A connector / MCP / API for the tag platform is available (GTM/GA4 API or a cont
 
 ### Mode 2 — Manual mode (user-supplied evidence)
 No connector: ask the user for the evidence instead of guessing — and audit exactly what they provide.
-- ask for a GTM container export (JSON) — it contains no secrets
+- ask for a **locally reviewed/redacted** GTM container export (JSON). Treat
+  every export as potentially sensitive: custom HTML, variables, identifiers,
+  endpoints, and embedded configuration can contain credentials or personal
+  data. Prefer a local file path and never paste or reproduce sensitive values.
 - ask for screenshots of GA4 events/key events and Tag Assistant output
 - ask for the site URL to check tag firing from the outside
 - ask which conversions are supposed to be tracked (the intent)

@@ -11,6 +11,10 @@ This is a FLOOR, not a ceiling: it sees server-set cookies and static
 third-party references in the initial HTML. Client-set cookies and tags
 injected by JavaScript need a real browser (or consent-mode testing) to
 catch fully. Exit 0 always (informational).
+
+Exit codes: 0 = no known trackers statically; 1 = trackers fire with no
+consent tool detected (FAIL); 2 = usage/unreachable; 3 = trackers plus a
+CMP found - consent gating UNVERIFIED without a real browser.
 """
 import os
 import sys
@@ -70,17 +74,20 @@ KNOWN_TRACKERS = {
 
 
 class SrcParser(HTMLParser):
+    """Collects each referenced resource URL exactly once (deduplicated) —
+    an <img> src is not counted twice, and repeated references to the same
+    URL don't inflate tracker counts."""
     def __init__(self):
         super().__init__()
         self.srcs = []
+        self._seen = set()
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
         for attr in ("src", "href"):
-            if a.get(attr):
-                self.srcs.append(a[attr])
-        # iframes / images used as pixels
-        if tag == "img" and a.get("src"):
-            self.srcs.append(a["src"])
+            u = a.get(attr)
+            if u and u not in self._seen:
+                self._seen.add(u)
+                self.srcs.append(u)
 
 
 def fetch(url):
@@ -112,14 +119,24 @@ def main(url):
     if not cookies:
         print("  (none set via response headers — client JS may still set some)")
     for c in cookies:
-        name = c.split("=", 1)[0]
-        flags = []
-        low = c.lower()
-        for f in ("secure", "httponly", "samesite"):
-            if f in low:
-                flags.append(f)
-        m = re.search(r"(?i)max-age=(\d+)", c)
-        life = f"max-age={m.group(1)}s" if m else "session/expires-based"
+        # Structural parse: first segment is name=value; the rest are
+        # attributes. Substring matching would false-positive on cookie
+        # VALUES containing e.g. "secure".
+        segments = [seg.strip() for seg in c.split(";")]
+        name = segments[0].split("=", 1)[0].strip()
+        attrs = {}
+        for seg in segments[1:]:
+            k, _, v = seg.partition("=")
+            attrs[k.strip().lower()] = v.strip()
+        flags = [f for f in ("secure", "httponly", "samesite") if f in attrs]
+        if "samesite" in attrs and attrs["samesite"]:
+            flags[flags.index("samesite")] = f"samesite={attrs['samesite'].lower()}"
+        if "max-age" in attrs and attrs["max-age"].lstrip("-").isdigit():
+            life = f"max-age={attrs['max-age']}s"
+        elif "expires" in attrs:
+            life = f"expires={attrs['expires']}"
+        else:
+            life = "session"
         print(f"  - {name}  [{', '.join(flags) or 'no flags'}]  {life}")
     print()
 
@@ -158,6 +175,26 @@ def main(url):
         print(f"  - {netloc}  (x{n})")
     print()
 
+    # ---- structured verdict -------------------------------------------------
+    cmp_present = any("CMP" in label for label in trackers_found)
+    hard_trackers = {l: n for l, n in trackers_found.items() if "CMP" not in l}
+    if hard_trackers and not cmp_present:
+        print(f"[FAIL] {len(hard_trackers)} tracker(s) load in the initial "
+              "HTML with NO consent tool detected - classic GDPR/ePrivacy gap")
+        verdict = 1
+    elif hard_trackers:
+        print(f"[UNVERIFIED] {len(hard_trackers)} tracker(s) plus a consent "
+              "tool detected - whether the CMP actually GATES them needs a "
+              "real browser with consent unaccepted")
+        verdict = 3
+    else:
+        print("[PASS] no known trackers in the initial HTML "
+              "(JS-injected tags still need a browser check)")
+        verdict = 0
+    print(f"RESULT: pass={0 if hard_trackers else 1} warn={len(third_party)} "
+          f"fail={1 if (hard_trackers and not cmp_present) else 0} "
+          f"unverified={1 if (hard_trackers and cmp_present) else 0}")
+    print()
     print("REVIEW GUIDANCE:")
     print("  * Any analytics/ad tracker firing on load without prior consent is")
     print("    the classic GDPR/ePrivacy gap. Confirm whether a consent tool")
@@ -167,7 +204,7 @@ def main(url):
     print("    consent-gated where required.")
     print("  * This is a static floor — run a real browser with the consent")
     print("    banner UNaccepted to see what actually fires pre-consent.")
-    return 0
+    return verdict
 
 
 if __name__ == "__main__":
