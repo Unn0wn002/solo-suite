@@ -28,6 +28,18 @@ PAGE2_HTML = (b"<html><head><title>Page Two</title>"
               b"<body><h1>two</h1></body></html>")
 BIG_SIZE = 3 * 1024 * 1024
 
+# Mutable endpoint-contract state for the v1.0.17 deployment/monitoring
+# binding tests: /version serves STATE["version_body"] (tests set it to a
+# string containing the repo's FINAL_SHA) and /health serves an explicit
+# JSON health contract. A generic page (e.g. /ok) deliberately satisfies
+# NEITHER binding.
+STATE = {"version_body": "no version deployed\n",
+         "health_body": '{"status": "ok"}'}
+
+
+def set_version(text):
+    STATE["version_body"] = text
+
 REDIRECTS = {
     "/redir-ok": "/ok",
     "/redir-private": "http://169.254.169.254/latest/meta-data/",
@@ -57,6 +69,12 @@ class Handler(BaseHTTPRequestHandler):
             code, ctype, body = 200, "text/html; charset=utf-8", PAGE2_HTML
         elif path == "/big":
             code, ctype, body = 200, "text/html; charset=utf-8", b"a" * BIG_SIZE
+        elif path == "/version":
+            code, ctype = 200, "text/plain; charset=utf-8"
+            body = STATE["version_body"].encode("utf-8")
+        elif path == "/health":
+            code, ctype = 200, "application/json"
+            body = STATE["health_body"].encode("utf-8")
         elif path == "/dns-query":
             qs = parse_qs(urlparse(self.path).query)
             rrtype = (qs.get("type") or ["TXT"])[0].upper()

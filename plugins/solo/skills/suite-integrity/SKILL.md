@@ -19,7 +19,12 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/suite-integrity/scripts/self_check.py" <su
 
 ## What it verifies
 1. **Every `plugins/*/.claude-plugin/plugin.json` is valid JSON** with `name`, `version`, `description`.
-2. **Every command file has**: a title (the file/heading), a purpose (`description:` frontmatter), inputs (`argument-hint:` or `$ARGUMENTS` in the body), and an output format (an `## Output` or `## Status` section).
+2. **Every command file has**: a title (the file/heading), a purpose (`description:` frontmatter), inputs (`argument-hint:` or `$ARGUMENTS` in the body), and an output format (an `
+## What a clean run does — and does not — prove
+
+A clean self-check means the suite's FILES are consistent: manifests parse and carry the required fields, commands/skills have valid official frontmatter, helper references and `${CLAUDE_PLUGIN_ROOT}` paths resolve, counts match reality, references resolve, room templates pass the schema validator, and versions agree. It is **static structure checking — not proof that the suite is healthy at runtime**. It does not execute the helpers against real targets, does not validate gate judgment quality, and cannot detect a well-formed but wrong instruction. Say so in the report. The script also supports **installed-plugin mode**: pointed at a single plugin directory (as in a plugin cache, with no marketplace.json), it validates that plugin's commands, skills, and helper paths.
+
+## Output` or `## Status` section).
 3. **Every skill directory has a `SKILL.md`** whose frontmatter is exactly `name` + `description`.
 4. **README counts match reality** — plugins, skills, commands, scripts.
 5. **`marketplace.json` is correct** — every plugin registered, metadata counts match the filesystem, every `source` path exists.

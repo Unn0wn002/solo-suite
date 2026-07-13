@@ -1,6 +1,9 @@
 # Audit Queries by Engine
 
 Read-only diagnostics. Run against the target and paste results into the report as evidence.
+**Policy: nothing in this file may write.** No `ANALYZE`, `VACUUM`, `REINDEX`, `PRAGMA optimize`,
+value-setting PRAGMAs, or DML/DDL — those belong to **database-fix** with confirmation, backup
+verification, and rollback guidance. A CI policy test (`tests/test_readonly_audit.py`) enforces this.
 
 ## Contents
 - [PostgreSQL](#postgresql)
@@ -182,10 +185,18 @@ PRAGMA index_info('index_name');
 EXPLAIN QUERY PLAN SELECT ... ;
 ```
 
-**Statistics and reclaimable space**
+**Reclaimable space (read-only)**
 ```sql
-ANALYZE;                 -- refresh planner stats (fast; run before judging plans)
-PRAGMA optimize;         -- targeted maintenance, safe to run routinely
 PRAGMA page_count; PRAGMA freelist_count;
--- freelist_count * page_size = reclaimable bytes; large ratio => VACUUM candidate
+-- freelist_count * page_size = reclaimable bytes; a large ratio makes the
+-- database a VACUUM candidate — but VACUUM is a WRITE and belongs to the
+-- database-fix workflow, never to this audit.
 ```
+
+> **Maintenance commands moved out of the audit.** `ANALYZE` and
+> `PRAGMA optimize` rewrite planner statistics — they mutate database state
+> and do NOT belong in a read-only audit. They now live in the
+> **database-fix** skill (Maintenance section), which requires explicit
+> confirmation, a verified backup, and rollback guidance before running them.
+> If query plans look wrong because statistics are stale, record that as a
+> finding and hand it to database-fix.

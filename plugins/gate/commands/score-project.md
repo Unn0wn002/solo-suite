@@ -1,10 +1,10 @@
 ---
-description: Score production readiness 0–100 across 12 categories — scoring only, no launch verdict; the gate itself is /gate:production-ready.
+description: Score production readiness across 14 categories (each /10; matrix-accepted N/A categories leave the denominator, normalized /100) — scoring only, no launch verdict; the gate itself is /gate:production-ready.
 argument-hint: [optional scope]
 ---
 Use the **production-readiness-reviewer** skill, scoring only. $ARGUMENTS
 
-Run the 12-section checklist as evidence and produce the skill's exact score block — 12 categories 0–10 and the overall /100 — but stop there: **no Launch Status, no GO/NO-GO**. Would-be hard blockers met along the way are listed as risks with their fix commands, not turned into a verdict. Use this as the trend metric between gate runs; when you need the enforced verdict, run `/gate:production-ready`.
+Run the 14-section checklist (Product, Architecture, Design, Frontend, Backend, Database, Security, Testing, Performance, SEO, Analytics, Deployment, Monitoring, Documentation) as evidence and produce the skill's exact score block — every applicable category 0–10, total /(10 × applicable), normalized /100, with N/A categories listed per the skill's applicability matrix (mandatory categories are never N/A) — but stop there: **no Launch Status, no verdict**. Would-be hard blockers met along the way are listed as risks with their fix commands, not turned into a verdict. Vendor checks stay stack-conditional (only providers in `.solo/stack.md`; others N/A with evidence). Use this as the trend metric between gate runs; when you need the enforced verdict, run `/gate:production-ready`.
 
 Record the dated score in `.solo/project.md` so progress is visible across sessions.
 

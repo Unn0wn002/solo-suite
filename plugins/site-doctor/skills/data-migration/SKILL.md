@@ -1,6 +1,7 @@
 ---
 name: data-migration
 description: Plan and safely execute data migrations — moving data between databases or engines, large schema restructures, ETL/import jobs, splitting or merging tables, and backfills at scale — with validation, integrity checks, rollback, and zero-downtime cutover. Use whenever the user is migrating data, changing database engines (e.g. MySQL to Postgres), importing a large dataset, restructuring how data is stored, doing an ETL job, or asks how to move data safely without downtime or loss. Extends database-fix (which covers in-place schema changes) to full data moves.
+disable-model-invocation: true
 ---
 
 # Data Migration

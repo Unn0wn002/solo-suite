@@ -10,8 +10,10 @@ Email that lands in spam (or gets rejected) is a silent failure — password res
 ## Run the DNS record checker first
 
 ```bash
-python3 scripts/check_email_dns.py example.com
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/email-deliverability/scripts/check_email_dns.py" example.com
 ```
+> **Running helpers:** `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code to this plugin's installed root, so the command works from any working directory. If `python3` is not on PATH, use `python` (macOS/Linux/Windows) (Windows launcher) instead.
+
 Stdlib-only; queries public DNS for the domain's MX, SPF, DMARC, and (with a selector) DKIM records and parses them for common misconfigurations. Use it as the factual base — it directly answers "are the auth records present and sane?"
 
 ## 1. Authentication — SPF, DKIM, DMARC (this is ~80% of deliverability)
@@ -82,4 +84,4 @@ Before auditing or building, read `.solo/stack.md` if it exists — it records t
 
 ## Script safety (url_guard)
 
-The bundled script(s) route every outbound request through `plugins/site-doctor/lib/url_guard.py`: HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched. DNS questions necessarily reach the DoH endpoint (Cloudflare by default; `SITE_DOCTOR_DOH` overrides it), which sees the queried names.
+The bundled script(s) route every outbound request through `${CLAUDE_PLUGIN_ROOT}/lib/url_guard.py` (shipped at `plugins/site-doctor/lib/url_guard.py` in the source tree): HTTPS-first scheme policy (http only where auditing it is the point), refusal of loopback/private/link-local/CGNAT/reserved/multicast and cloud-metadata targets — every DNS answer and every redirect hop is re-validated — plus a hard response-size cap. A refused target prints `BLOCKED unsafe target: <reason>` instead of being fetched. DNS questions necessarily reach the DoH endpoint (Cloudflare by default; `SITE_DOCTOR_DOH` overrides it), which sees the queried names.

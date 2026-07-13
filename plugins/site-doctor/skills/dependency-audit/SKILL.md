@@ -15,8 +15,10 @@ pip-audit                   # Python (pip install pip-audit) — or: safety chec
 ```
 Plus the manifest reader script for a cross-ecosystem inventory and staleness/lockfile check:
 ```bash
-python3 scripts/check_deps.py /path/to/project
+python3 "${CLAUDE_PLUGIN_ROOT}/skills/dependency-audit/scripts/check_deps.py" /path/to/project
 ```
+> **Running helpers:** `${CLAUDE_PLUGIN_ROOT}` is set by Claude Code to this plugin's installed root, so the command works from any working directory. If `python3` is not on PATH, use `python` (macOS/Linux/Windows) (Windows launcher) instead.
+
 Stdlib-only; parses package.json/requirements/lockfiles, reports direct vs transitive counts, pinning, and lockfile presence. Use the ecosystem's own audit tool for CVE data (it has the live advisory database) and the script for structure.
 
 ## 1. Known vulnerabilities (CVEs) — but triage by reachability
