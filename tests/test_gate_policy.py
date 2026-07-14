@@ -165,6 +165,13 @@ class CommandPolicy(unittest.TestCase):
         self.accept("deployment", ["curl", "-sSf", "-m", "10",
                                    "https://x.example/version"])
 
+    def test_email_dns_is_not_monitoring_evidence(self):
+        """Email authentication can be healthy while every monitor is off."""
+        self.refuse("monitoring", [
+            PYTOK, gp.canonical_helper("check_email_dns.py"), "example.com"])
+        self.accept("monitoring", ["curl", "-sSf", "-m", "10",
+                                   "https://x.example/health"])
+
     def test_pip_audit_requires_committed_recognized_nonempty_target(self):
         why = self.refuse("security", ["pip-audit", "--strict"])
         self.assertIn("requires exactly one", why)

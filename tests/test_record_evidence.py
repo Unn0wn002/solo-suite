@@ -66,7 +66,7 @@ def run_ce(root, *extra):
     argv = [sys.executable, CE_PY,
             os.path.join(root, ".solo", "gate-evidence"),
             "--root", root, "--environment", "production",
-            "--project", "demo"] + list(extra)
+            "--project", "demo", "--profile", "api-service"] + list(extra)
     return subprocess.run(argv, capture_output=True, text=True, timeout=120)
 
 
@@ -85,6 +85,10 @@ class RecordEvidence(unittest.TestCase):
         with open(os.path.join(self.root, ".gitignore"), "w",
                   encoding="utf-8") as f:
             f.write(".solo/gate-evidence/\n__pycache__/\n*.pyc\n")
+        os.makedirs(os.path.join(self.root, ".solo"), exist_ok=True)
+        with open(os.path.join(self.root, ".solo", "project.md"), "w",
+                  encoding="utf-8") as f:
+            f.write("# Project\n\nProject profile: api-service\n")
         git(self.root, "add", "-A")
         git(self.root, "commit", "-qm", "init")
         self.head = git(self.root, "rev-parse", "HEAD").stdout.strip()
@@ -117,6 +121,16 @@ class RecordEvidence(unittest.TestCase):
         r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 2, "argparse must reject the "
                          "removed --allow-dirty flag")
+
+    def test_expiry_window_cannot_exceed_gate_policy(self):
+        argv = [sys.executable, RE_PY, "--category", "testing",
+                "--project", "demo", "--environment", "production",
+                "--root", self.root, "--reviewer", "qa",
+                "--expires-days", "8", "--preview", "--",
+                sys.executable, "-m", "unittest", "discover"]
+        r = subprocess.run(argv, capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("between 1 and 7", r.stderr)
 
     def test_execution_is_manual_preview_then_bound_confirmation(self):
         base = [sys.executable, RE_PY, "--category", "testing",
@@ -567,7 +581,8 @@ class SafePathsAndFailClosedV1015(RecordEvidence):
             f.write("{}")
         r = subprocess.run(
             [sys.executable, CE_PY, stray, "--root", self.root,
-             "--environment", "production", "--project", "demo"],
+             "--environment", "production", "--project", "demo",
+             "--profile", "api-service"],
             capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 2, r.stdout)
         self.assertIn("outside", r.stdout)
@@ -778,6 +793,20 @@ class CanonicalNaOperation(RecordEvidence):
         out = run_ce(self.root, "--profile", "api-service")
         self.assertIn("PASS", out.stdout)
         self.assertIn("1 N/A", out.stdout)
+
+    def test_profile_must_match_committed_project_file(self):
+        r = self.run_na(profile="library-package")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("does not match", r.stdout)
+        self.assertIn("committed .solo/project.md", r.stdout)
+        self.assertFalse(os.path.exists(self.record_path("seo")))
+
+    def test_profile_source_is_canonical_not_caller_selected(self):
+        r = self.run_na("--profile-source", "docs/profile.md")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("must be exactly", r.stdout)
+        self.assertIn(".solo/project.md", r.stdout)
+        self.assertFalse(os.path.exists(self.record_path("seo")))
 
     def test_mandatory_categories_are_refused(self):
         for cat in sorted(gp.MANDATORY):

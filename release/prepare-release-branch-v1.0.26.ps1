@@ -12,7 +12,7 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Provenance,
     [switch]$AllowLocalTestRemote,
-    [string]$ReleaseBranch = "release/v1.0.25",
+    [string]$ReleaseBranch = "release/v1.0.26",
     [string]$GitUserName = "Solo Suite release candidate",
     [string]$GitUserEmail = "solo-suite-release@users.noreply.github.com"
 )
@@ -21,7 +21,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "publish-common.ps1")
 
-$version = "1.0.25"
+$version = "1.0.26"
 $ExpectedRemoteHead = $ExpectedRemoteHead.ToLowerInvariant()
 if ($ReleaseBranch -cne "release/v$version") {
     throw "This reviewed helper may create only release/v$version."

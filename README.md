@@ -58,9 +58,10 @@ Skills fire **automatically** on matching requests; the slash commands are expli
 - **`/solo:self-check`** — verifies the suite itself: manifests valid, every command has title/purpose/inputs/output, every skill has a SKILL.md, README & marketplace counts match reality, no duplicate names, no broken cross-references, and which `.solo/` memory files are missing. Backed by a stdlib script (`suite-integrity`).
 - **Strict gates** — `/gate:before-code`, `/gate:before-merge`, `/gate:before-deploy` each have an explicit blocker list; **one failed check = NO-GO**, never averaged away.
 - **Scoring** — `/gate:production-ready` scores **14 categories** (Product, Architecture, Design, Frontend, Backend, Database, Security, Testing, Performance, SEO, Analytics, Deployment, Monitoring, Documentation) each 0–10. Categories with an accepted N/A record under the applicability matrix leave the denominator (the seven mandatory categories never do): `applicable_max = applicable_category_count * 10` and `normalized_score = round(total / applicable_max * 100)`. It reports that normalized score, and returns **Launch Status: BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH**, with hard blockers forcing BLOCKED regardless of score. Every category verdict is backed by machine-readable, self-attested local gate evidence (`gate-evidence-v1`, created at FINAL_SHA through the manual-only `/gate:finalize-evidence` workflow) that the gate **rejects when stale** — wrong HEAD, wrong committed-tree digest, wrong environment, or expired. Each command is previewed first, requires an exact confirmation token and explicit network approval when applicable, captures bounded output in a scrubbed child environment, and runs in a killable POSIX process group or Windows Job Object; surviving descendants/readers refuse evidence. Authenticated `gh run view` uses only an explicit external `--gh-config-dir` reference, never ambient token variables or the normal user HOME. Still use an OS/container sandbox for untrusted projects. The unsigned local record cannot cryptographically prove which process authored it or that a human approved it; its `recorder` field is a copyable format label. `/gate:score-project` runs the same checklist and scoring without the launch verdict — the trend metric between gate runs.
+- **N/A profile binding** — the committed `.solo/project.md` must contain exactly one standalone `Project profile: <recognized-slug>` line. The evidence recorder and checker derive it from `HEAD`; missing, malformed, ambiguous, symlink-backed, caller-selected, or CLI-mismatched profile sources block N/A verdicts.
 - **Evidence-based audits** — every audit command outputs Status → Evidence Checked → Findings → Risk Level → Required Fixes → Verification Steps → Next Recommended Command. No evidence, no finding.
 - **Two-mode stack audits** — Connector mode (live config via connector-auditor, read-only, never prints secrets) or Manual mode (asks for screenshots, config files, env-var *names*); each audit states which mode it used.
-- **Agent rooms** — `/ai:agent-rooms` sets up multi-agent workflows from five templates (Planning, Build, QA, Hardening, Launch) and ships four ready-made JSON room files (`agentsrooms/`: full-team-website, site-doctor-audit, production-release, bug-fix-loop): one writer per artifact, explicit `.solo/` context per seat, handoffs checked, exit gate enforced.
+- **Agent rooms** — `/ai:agent-rooms` sets up multi-agent workflows from five templates (Planning, Build, QA, Hardening, Launch) and ships four ready-made JSON room files (`agentsrooms/`: full-team-website, site-doctor-audit, production-release, bug-fix-loop): one writer per artifact per stage, explicit `.solo/` context per seat, handoffs checked, exit gate enforced.
 
 ---
 
@@ -75,7 +76,7 @@ Eight focused plugins that turn the same `.solo/` memory into day-to-day enginee
 | **repo** | repo-analyzer | `/repo:map` `/repo:risk-map` `/repo:dependency-map` `/repo:find-dead-code` `/repo:onboarding` |
 | **security** | authz-security-reviewer | `/security:threat-model` `/security:authz-matrix` `/security:secrets-fix` `/security:rls-test` `/security:abuse-cases` |
 | **browser** | browser-qa-engineer | `/browser:smoke-test` `/browser:console-errors` `/browser:visual-check` `/browser:mobile-test` `/browser:form-submit-test` |
-| **gate** | quality-gatekeeper, production-readiness-reviewer | `/gate:before-code` `/gate:before-merge` `/gate:before-deploy` `/gate:production-ready` `/gate:score-project` |
+| **gate** | quality-gatekeeper, production-readiness-reviewer | `/gate:before-code` `/gate:before-merge` `/gate:before-deploy` `/gate:finalize-evidence` `/gate:production-ready` `/gate:score-project` |
 | **ai** | ai-output-auditor, agent-room-templates | `/ai:prompt-improve` `/ai:handoff-check` `/ai:review-output` `/ai:compare-models` `/ai:repair-cycle` `/ai:agent-rooms` |
 | **growth** | conversion-optimizer | `/growth:conversion-audit` |
 
@@ -136,36 +137,188 @@ Want everything in one step? Install the **`full-team`** meta-plugin — it depe
 
 A locally built bundle is an unsigned **release candidate**. Canonical release
 artifacts come from the tagged CI run and are attached to the matching GitHub
-Release. Download the complete asset set, including every matching
-`.sigstore.json` bundle. Verify the signed payload manifest before trusting its
-checksums, then verify every listed payload's own signature:
+Release. The public release is valid only when its asset names match the fixed
+18-file allowlist, GitHub reports it immutable, and its annotated tag peels to
+the commit named by the signed provenance. Authenticate the outer
+`SIGNED-BUNDLE-SHA256SUMS` first; only then use it to check the 16 inner files.
+Next authenticate `RELEASE-SHA256SUMS`, check its seven payloads, and verify
+each payload's own signature:
+
+Run this verifier on GNU/Linux or Git Bash with GNU coreutils, Python 3,
+GitHub CLI (`gh`), and Cosign installed. Stock macOS utilities do not support
+the GNU `find`, `cmp`, and `sha256sum` options used below.
 
 ```bash
-TAG=v1.0.25
+set -euo pipefail
+TAG=v1.0.26
+BASELINE=v1.0.25
 CANONICAL_REPO="$(gh api repos/unn0wn002/solo-suite --jq .full_name)"
 CERT_ID="https://github.com/${CANONICAL_REPO}/.github/workflows/ci.yml@refs/tags/${TAG}"
 ISSUER="https://token.actions.githubusercontent.com"
+API_VERSION=2026-03-10
+VERIFY_TMP="$(mktemp -d)"
+ASSET_DIR="$(mktemp -d)"
+
+gh release view "$TAG" --repo "$CANONICAL_REPO" \
+  --json isDraft,isImmutable,isPrerelease,tagName \
+  > "$VERIFY_TMP/release.json"
+python - "$VERIFY_TMP/release.json" "$TAG" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    release = json.load(stream)
+if release.get("tagName") != sys.argv[2]:
+    raise SystemExit("UNVERIFIED: release tag differs")
+if release.get("isDraft") is not False:
+    raise SystemExit("UNVERIFIED: release is still a draft")
+if release.get("isPrerelease") is not False:
+    raise SystemExit("UNVERIFIED: release is a prerelease")
+if release.get("isImmutable") is not True:
+    raise SystemExit("UNVERIFIED: GitHub release is not immutable")
+PY
+
+gh api --method GET "repos/$CANONICAL_REPO/git/ref/tags/$TAG" \
+  -H 'Accept: application/vnd.github+json' \
+  -H "X-GitHub-Api-Version: $API_VERSION" > "$VERIFY_TMP/tag-ref.json"
+TAG_OBJECT_SHA="$(python - "$VERIFY_TMP/tag-ref.json" "$TAG" <<'PY'
+import json, re, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    ref = json.load(stream)
+if ref.get("ref") != "refs/tags/" + sys.argv[2]:
+    raise SystemExit("UNVERIFIED: GitHub tag API returned the wrong ref")
+target = ref.get("object")
+if not isinstance(target, dict) or target.get("type") != "tag":
+    raise SystemExit("UNVERIFIED: release ref is not an annotated tag")
+sha = target.get("sha")
+if not isinstance(sha, str) or re.fullmatch(
+        r"[0-9a-f]{40}|[0-9a-f]{64}", sha) is None:
+    raise SystemExit("UNVERIFIED: annotated tag object SHA is malformed")
+print(sha)
+PY
+)"
+gh api --method GET "repos/$CANONICAL_REPO/git/tags/$TAG_OBJECT_SHA" \
+  -H 'Accept: application/vnd.github+json' \
+  -H "X-GitHub-Api-Version: $API_VERSION" > "$VERIFY_TMP/tag-object.json"
+TAG_COMMIT="$(python - "$VERIFY_TMP/tag-object.json" "$TAG" \
+  "$TAG_OBJECT_SHA" <<'PY'
+import json, re, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    tag = json.load(stream)
+if tag.get("tag") != sys.argv[2] or tag.get("sha") != sys.argv[3]:
+    raise SystemExit("UNVERIFIED: annotated tag object identity differs")
+target = tag.get("object")
+if not isinstance(target, dict) or target.get("type") != "commit":
+    raise SystemExit("UNVERIFIED: annotated tag does not target a commit")
+sha = target.get("sha")
+if not isinstance(sha, str) or re.fullmatch(
+        r"[0-9a-f]{40}|[0-9a-f]{64}", sha) is None:
+    raise SystemExit("UNVERIFIED: peeled tag commit is malformed")
+print(sha)
+PY
+)"
+
+payloads=(
+  SHA256SUMS
+  VALIDATION-REPORT.md
+  "changed_files_${BASELINE}_to_${TAG}.txt"
+  provenance.json
+  sbom.json
+  "solo-suite-plugin-${TAG}.zip"
+  "validation-logs-${TAG}.zip"
+)
+unsigned=(RELEASE-SHA256SUMS "${payloads[@]}")
+signed_inner=()
+for payload in "${unsigned[@]}"; do
+  signed_inner+=("$payload" "$payload.sigstore.json")
+done
+final_assets=(
+  "${signed_inner[@]}"
+  SIGNED-BUNDLE-SHA256SUMS
+  SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+)
+printf '%s\n' "${payloads[@]}" | LC_ALL=C sort > "$VERIFY_TMP/payloads"
+printf '%s\n' "${signed_inner[@]}" | LC_ALL=C sort > "$VERIFY_TMP/signed-inner"
+printf '%s\n' "${final_assets[@]}" | LC_ALL=C sort > "$VERIFY_TMP/final-assets"
+test "$(wc -l < "$VERIFY_TMP/final-assets")" = 18
+
+gh release download "$TAG" --repo "$CANONICAL_REPO" --dir "$ASSET_DIR" --pattern '*'
+if find "$ASSET_DIR" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+  echo 'UNVERIFIED: non-regular or nested release entry' >&2; exit 1
+fi
+find "$ASSET_DIR" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+  LC_ALL=C sort > "$VERIFY_TMP/downloaded-assets"
+cmp --silent "$VERIFY_TMP/final-assets" "$VERIFY_TMP/downloaded-assets" || {
+  echo 'UNVERIFIED: release does not contain the exact 18 assets' >&2; exit 1;
+}
+
+manifest_names() {
+  local manifest="$1" expected="$2" actual="$3"
+  sed -E -n 's/^[0-9a-f]{64}  ([A-Za-z0-9._-]+)$/\1/p' "$manifest" |
+    LC_ALL=C sort > "$actual"
+  test "$(wc -l < "$manifest")" = "$(wc -l < "$actual")"
+  cmp --silent "$expected" "$actual"
+}
+
+cd "$ASSET_DIR"
 printf 'Expected certificate identity: %s\n' "$CERT_ID"
+cosign verify-blob SIGNED-BUNDLE-SHA256SUMS \
+  --bundle SIGNED-BUNDLE-SHA256SUMS.sigstore.json \
+  --certificate-identity "$CERT_ID" \
+  --certificate-oidc-issuer "$ISSUER"
+manifest_names SIGNED-BUNDLE-SHA256SUMS \
+  "$VERIFY_TMP/signed-inner" "$VERIFY_TMP/outer-manifest-names"
+sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS
+
 cosign verify-blob RELEASE-SHA256SUMS \
   --bundle RELEASE-SHA256SUMS.sigstore.json \
   --certificate-identity "$CERT_ID" \
   --certificate-oidc-issuer "$ISSUER"
-sha256sum -c RELEASE-SHA256SUMS
-while read -r _digest payload; do
-  test -n "$payload" || continue
+manifest_names RELEASE-SHA256SUMS \
+  "$VERIFY_TMP/payloads" "$VERIFY_TMP/release-manifest-names"
+sha256sum --check --strict RELEASE-SHA256SUMS
+for payload in "${payloads[@]}"; do
   cosign verify-blob "$payload" \
     --bundle "$payload.sigstore.json" \
     --certificate-identity "$CERT_ID" \
     --certificate-oidc-issuer "$ISSUER"
-done < RELEASE-SHA256SUMS
+done
+python - provenance.json "$TAG_COMMIT" "${TAG#v}" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    provenance = json.load(stream)
+if provenance.get("source_commit") != sys.argv[2]:
+    raise SystemExit(
+        "UNVERIFIED: signed provenance commit differs from peeled tag target")
+if provenance.get("version") != sys.argv[3]:
+    raise SystemExit("UNVERIFIED: signed provenance version differs from tag")
+if provenance.get("source_dirty") is not False:
+    raise SystemExit("UNVERIFIED: signed provenance reports a dirty source")
+print("Verified immutable release commit:", sys.argv[2])
+PY
 ```
 
 `gh api ... .full_name` supplies GitHub's canonical owner/repository casing;
 the expected identity is derived from that trusted repository metadata, never
-from the untrusted bundle being checked. `cosign` requires an exact identity
-match. A missing release asset, bundle, manifest entry, or failed checksum or
-signature leaves the release **UNVERIFIED**. Temporary GitHub Actions artifacts
-are not the canonical distribution channel.
+from the untrusted bundle being checked. The expected names are constructed
+from the requested tag and the reviewed previous-release baseline, never from
+a downloaded manifest. The outer manifest intentionally excludes itself and
+its signature, and `RELEASE-SHA256SUMS` excludes itself and all signatures, so
+neither checksum graph is circular. `cosign` requires an exact identity match.
+A missing or additional release asset, bundle, manifest entry, or failed
+checksum or signature leaves the release **UNVERIFIED**. Temporary GitHub
+Actions artifacts are not the canonical distribution channel.
+
+Canonical publication also fails closed unless
+[GitHub Immutable Releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
+are enabled before the draft is created and an active, no-bypass tag ruleset
+protects `refs/tags/v*` against update and deletion. Maintainers must configure
+both controls before pushing the release tag. GitHub
+[omits `bypass_actors` unless the caller has ruleset write access](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10#get-a-repository-ruleset),
+so the protected `release-publishing` environment must contain a fine-grained
+`RELEASE_SETTINGS_AUDIT_TOKEN` scoped only to this repository with repository
+**Administration: write**. The no-checkout preflight exposes it to one inline
+step that issues `GET` requests only; the token is not available to the asset
+publication step. Publication uses GitHub's separate, short-lived
+`contents: write` workflow token.
 
 **Install `solo` first** (or `full-team`) — it owns the shared memory the others build on. Install only the plugins you want; each degrades gracefully if a sibling is missing.
 

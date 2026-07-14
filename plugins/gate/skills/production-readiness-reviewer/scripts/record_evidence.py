@@ -76,8 +76,10 @@ WHAT IT REFUSES (exit 2, no record written):
   * an N/A request for a MANDATORY category (product, architecture,
     security, testing, deployment, monitoring, documentation), for a
     category/profile cell the matrix does not permit, without --profile,
-    with an empty/trivial --reason, or without at least one --checked
-    item describing what was actually inspected.
+    when --profile differs from the single canonical `Project profile:`
+    field in the COMMITTED .solo/project.md at HEAD, with an arbitrary
+    --profile-source, with an empty/trivial --reason, or without at least
+    one --checked item describing what was actually inspected.
 
 SOURCE IDENTITY (never caller-asserted): commit = `git rev-parse HEAD`;
 tree_digest = SHA-256 over the COMMITTED tree at HEAD (path + blob sha
@@ -820,14 +822,25 @@ def record_not_applicable(args):
         print("REFUSED: --reviewer must be non-empty")
         return 2
     profile_source = (args.profile_source or "").strip()
-    if not profile_source:
-        print("REFUSED: --profile-source must name where the project "
-              "profile is recorded (default: .solo/project.md)")
+    if profile_source != gp.PROJECT_PROFILE_SOURCE:
+        print("REFUSED: --profile-source must be exactly %r; the N/A "
+              "profile is bound to that committed file, not a caller-"
+              "selected source" % gp.PROJECT_PROFILE_SOURCE)
         return 2
     # ---- source identity: derived from git objects, never asserted ---------
     head, _digest, err = _check_repo_identity(root)
     if err:
         print("REFUSED: %s" % err)
+        return 2
+    committed_profile, profile_err = gp.committed_project_profile(root)
+    if profile_err:
+        print("REFUSED: committed project profile unavailable: %s" %
+              profile_err)
+        return 2
+    if args.profile != committed_profile:
+        print("REFUSED: --profile %r does not match %r recorded in the "
+              "committed %s at HEAD" %
+              (args.profile, committed_profile, gp.PROJECT_PROFILE_SOURCE))
         return 2
     # ---- output path must resolve inside the evidence dir ------------------
     out_default = os.path.join(root, gp.EVIDENCE_DIR,
@@ -852,7 +865,7 @@ def record_not_applicable(args):
         "reason": reason,
         "applicability": {
             "matrix": "%s:%s" % (args.category, args.profile),
-            "profile_source": profile_source,
+            "profile_source": gp.PROJECT_PROFILE_SOURCE,
             "checked": checked,
         },
         "reviewer": args.reviewer,
@@ -877,6 +890,13 @@ def record_not_applicable(args):
     return 0
 
 
+def bounded_expires_days(value):
+    days = int(value)
+    if not 1 <= days <= 7:
+        raise argparse.ArgumentTypeError("must be between 1 and 7 days")
+    return days
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         usage="record_evidence.py --category CAT --project P --environment "
@@ -893,7 +913,8 @@ def main(argv=None):
     ap.add_argument("--profile", default=None,
                     choices=sorted(gp.RECOGNIZED_PROFILES))
     ap.add_argument("--run-id", default=None)
-    ap.add_argument("--expires-days", type=int, default=7)
+    ap.add_argument("--expires-days", type=bounded_expires_days, default=7,
+                    help="record validity (1-7 days; cannot exceed gate policy)")
     ap.add_argument("--out", default=None,
                     help="record path (default: <root>/.solo/gate-evidence/"
                          "<category>.json)")
@@ -936,9 +957,10 @@ def main(argv=None):
     ap.add_argument("--checked", action="append", default=None,
                     help="(--not-applicable, repeatable) what was actually "
                          "inspected to conclude non-applicability")
-    ap.add_argument("--profile-source", default=".solo/project.md",
-                    help="(--not-applicable) where the project profile is "
-                         "recorded (default: .solo/project.md)")
+    ap.add_argument("--profile-source", default=gp.PROJECT_PROFILE_SOURCE,
+                    help="(--not-applicable) compatibility flag; must be "
+                         "exactly .solo/project.md, whose committed "
+                         "Project profile: field is authoritative")
     ap.add_argument("command", nargs=argparse.REMAINDER,
                     help="-- followed by the exact command argv")
     args = ap.parse_args(argv)

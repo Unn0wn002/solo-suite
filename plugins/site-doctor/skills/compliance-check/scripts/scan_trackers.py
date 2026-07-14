@@ -10,11 +10,12 @@ BLOCKED result. Usage:
 This is a FLOOR, not a ceiling: it sees server-set cookies and static
 third-party references in the initial HTML. Client-set cookies and tags
 injected by JavaScript need a real browser (or consent-mode testing) to
-catch fully. Exit 0 always (informational).
+catch fully.
 
 Exit codes: 0 = no known trackers statically; 1 = trackers fire with no
-consent tool detected (FAIL); 2 = usage/unreachable; 3 = trackers plus a
-CMP found - consent gating UNVERIFIED without a real browser.
+consent tool detected (FAIL); 2 = usage/unreachable/HTTP error; 3 = coverage
+UNVERIFIED (non-HTML, empty, truncated, unparsable, or trackers plus a CMP
+whose consent gating needs a real browser).
 """
 import os
 import sys
@@ -94,24 +95,104 @@ def fetch(url):
     try:
         r = safe_get(url, timeout=TIMEOUT, allow_http=True, max_bytes=MAX_BYTES,
                      headers={"User-Agent": UA})
-        cookies = r.headers.get_all("Set-Cookie") or []
-        if r.status >= 400:
-            return r.status, cookies, ""
-        return r.status, cookies, (r.body or b"").decode("utf-8", "replace")
+        get_all = getattr(r.headers, "get_all", None)
+        cookies = get_all("Set-Cookie") or [] if callable(get_all) else []
+        final_url = getattr(r, "url", url)
+        if not same_audit_origin(url, final_url, allow_http_upgrade=True):
+            return (r.status, cookies, "",
+                    "redirected to unrelated origin %s" % final_url,
+                    final_url)
+        if not 200 <= r.status < 300:
+            return r.status, cookies, "", "HTTP %s" % r.status, final_url
+        if r.truncated:
+            return (r.status, cookies, "",
+                    "response exceeded the %d-byte scan limit" % MAX_BYTES,
+                    final_url)
+        content_type = r.headers.get("Content-Type", "")
+        ctype = content_type.split(";", 1)[0].strip().lower()
+        if ctype not in ("text/html", "application/xhtml+xml"):
+            return (r.status, cookies, "",
+                    "response Content-Type %r is not HTML" %
+                    (ctype or "(missing)"), final_url)
+        body = r.body or b""
+        if not body.strip():
+            return (r.status, cookies, "", "HTML response body is empty",
+                    final_url)
+        charset = "utf-8"
+        for parameter in content_type.split(";")[1:]:
+            key, separator, value = parameter.partition("=")
+            if separator and key.strip().lower() == "charset":
+                charset = value.strip().strip('"\'').lower()
+                break
+        aliases = {"utf-8": "utf-8", "utf8": "utf-8",
+                   "us-ascii": "ascii", "ascii": "ascii"}
+        codec = aliases.get(charset)
+        if codec is None:
+            return (r.status, cookies, "",
+                    "unsupported HTML charset %r" % charset, final_url)
+        try:
+            html = body.decode(codec, "strict")
+        except UnicodeDecodeError:
+            return (r.status, cookies, "",
+                    "HTML body is not valid %s" % charset, final_url)
+        return r.status, cookies, html, None, final_url
     except BlockedUrlError as e:
         print(f"BLOCKED unsafe target: {e}")
-        return None, [], ""
+        return None, [], "", "blocked unsafe target", None
     except Exception as e:
         print(f"Could not fetch {url}: {e}")
-        return None, [], ""
+        return None, [], "", "request failed", None
+
+
+def normalized_hostname(value):
+    """Return a structural lower-case hostname for a URL or netloc."""
+    try:
+        parsed = urlparse(value if "://" in value else "//" + value)
+        host = parsed.hostname
+        if not host:
+            return None
+        return host.rstrip(".").encode("idna").decode("ascii").lower()
+    except (UnicodeError, ValueError):
+        return None
+
+
+def same_site_url(left, right):
+    """Accept only the same hostname or its explicit www variant."""
+    a, b = normalized_hostname(left), normalized_hostname(right)
+    if not a or not b:
+        return False
+    strip_www = lambda host: host[4:] if host.startswith("www.") else host
+    return strip_www(a) == strip_www(b)
+
+
+def same_audit_origin(left, right, allow_http_upgrade=False):
+    """Bind evidence to a host and effective port, with optional HTTPS upgrade."""
+    try:
+        a, b = urlparse(left), urlparse(right)
+        a_port = a.port or (443 if a.scheme.lower() == "https" else 80)
+        b_port = b.port or (443 if b.scheme.lower() == "https" else 80)
+    except ValueError:
+        return False
+    if not same_site_url(left, right):
+        return False
+    if a.scheme.lower() == b.scheme.lower():
+        return a_port == b_port
+    return bool(allow_http_upgrade and a.scheme.lower() == "http" and
+                b.scheme.lower() == "https" and a_port == 80 and b_port == 443)
 
 
 def main(url):
-    host = urlparse(url).netloc
-    status, cookies, html = fetch(url)
+    status, cookies, html, problem, final_url = fetch(url)
     if status is None:
+        print("RESULT: pass=0 warn=0 fail=0 unverified=1")
         return 2
     print(f"=== Privacy/tracker scan: {url} (status {status}) ===\n")
+    if problem:
+        http_error = not 200 <= status < 300
+        level = "ERROR" if http_error else "UNVERIFIED"
+        print(f"[{level}] {problem}; tracker coverage is not a pass")
+        print("RESULT: pass=0 warn=0 fail=0 unverified=1")
+        return 2 if http_error else 3
 
     # --- cookies set on initial load ---
     print("Cookies set by the server on load "
@@ -144,8 +225,12 @@ def main(url):
     p = SrcParser()
     try:
         p.feed(html)
-    except Exception:
-        pass
+        p.close()
+    except Exception as e:
+        print(f"[UNVERIFIED] HTML parser failed: {e}; tracker coverage is "
+              "not a pass")
+        print("RESULT: pass=0 warn=0 fail=0 unverified=1")
+        return 3
 
     third_party = {}
     trackers_found = {}
@@ -153,7 +238,8 @@ def main(url):
         if src.startswith("//"):
             src = "https:" + src
         netloc = urlparse(src).netloc
-        if not netloc or netloc == host:
+        src_host = normalized_hostname(netloc) if netloc else None
+        if not src_host or same_audit_origin(final_url, src):
             continue
         third_party.setdefault(netloc, 0)
         third_party[netloc] += 1

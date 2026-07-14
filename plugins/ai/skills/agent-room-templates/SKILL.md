@@ -5,12 +5,12 @@ description: Ready-made multi-agent "room" templates for running a phase of work
 
 # Agent Room Templates
 
-A "room" is a small, purpose-built team of AI agents working one phase together: each seat has a role, a context package (the exact `.solo/` files it reads), a deliverable, and a handoff target. Rooms keep multi-agent work from turning into contradictory edits — one writer per artifact, everything flowing through `.solo/`.
+A "room" is a small, purpose-built team of AI agents working one phase together: each seat has a role, a context package (the exact `.solo/` files it reads), a deliverable, and a handoff target. Rooms keep multi-agent work from turning into contradictory edits — one writer per artifact per stage, everything flowing through `.solo/`.
 
 > Interpretation note: this implements "AgentRooms" as reusable multi-agent workflow templates. If AgentRooms is a specific product/tool you use, say so — the templates port to it directly.
 
 ## Room rules (all templates)
-- **One writer per artifact** — two agents never edit the same `.solo/` file or code area in the same room.
+- **One writer per artifact per stage** — two seats never edit the same `.solo/` file or code area concurrently in one stage. A declared later stage may update the same artifact sequentially.
 - **Context is explicit** — each seat is handed named `.solo/` files, not "the whole repo, good luck".
 - **Every seat ends with a handoff** — checked by `/ai:handoff-check` before the next seat starts.
 - **Model routing** — pick who sits where with `/ai:compare-models`; audit anything produced with `/ai:review-output`.
@@ -55,7 +55,7 @@ Schema (`solo-suite/agentroom-v1`, formal contract in `schema/agentroom-v1.schem
 
 **Implicit writes are validated.** The validator knows which suite commands write shared memory as a side effect (site-doctor audits write tasks/decisions/handoff; `/dev:implement-feature` writes decisions; gates write risks; …) and computes each seat's *effective* writes as declared + implicit. Two effective writers of one artifact in one stage fail validation; in stewarded rooms, steward-owned files may only be `proposes`-declared by other seats. The steward's duplicate-T-ID contract is checkable with `check_tasks_file()`.
 
-To customize: copy a file, edit seats/stages, keep one-writer-per-artifact true, then re-run `python3 "${CLAUDE_PLUGIN_ROOT}/skills/agent-room-templates/scripts/validate_rooms.py"` (stdlib; uses the `jsonschema` library when installed, otherwise a built-in strict evaluator; use `python` if `python3` is missing) — it applies the JSON Schema first, then checks seat/stage placement, entry→exit reachability per profile, the single exit-gate executor, per-stage writers (declared + implicit), steward/proposal discipline, locks, workspaces, the worktrees execution contract, category-specific gate-evidence producers, bounded loops, and that every referenced command exists.
+To customize: copy a file, edit seats/stages, keep one-writer-per-artifact-per-stage true, then re-run `python3 "${CLAUDE_PLUGIN_ROOT}/skills/agent-room-templates/scripts/validate_rooms.py"` (stdlib; uses the `jsonschema` library when installed, otherwise a built-in strict evaluator; use `python` if `python3` is missing) — it applies the JSON Schema first, then checks seat/stage placement, entry→exit reachability per profile, the single exit-gate executor, per-stage writers (declared + implicit), steward/proposal discipline, locks, workspaces, the worktrees execution contract, category-specific gate-evidence producers, bounded loops, and that every referenced command exists.
 
 ## Output of this skill
 When asked for a room, output: the template name, each seat with (role, model suggestion, exact `.solo/` context files, commands to run, deliverable), the sequence/parallelism, and the exit gate — ready to paste into each agent's first prompt.

@@ -43,6 +43,22 @@ All files live in `.solo/` at the project root, are plain markdown, and are comm
 | `handoff.md` | this skill | Latest session state — overwritten each handoff |
 | `config.md` | memory-sync (optional) | Local settings such as sync targets (Obsidian vault path, Grafana URL) — gitignore if sensitive |
 
+### Canonical project profile
+
+`project.md` is also the single source of truth for gate applicability. It
+MUST contain exactly one standalone, case-sensitive field in this form:
+
+```markdown
+Project profile: <slug>
+```
+
+`<slug>` MUST be exactly one of `public-marketing-site`,
+`saas-application`, `e-commerce`, `internal-application`, `api-service`, or
+`library-package`. The line must be committed before evidence is recorded.
+The production gate reads `HEAD:.solo/project.md`, not an uncommitted working
+copy, and rejects a missing, duplicated, malformed, unknown, or mismatched
+profile. This prevents a command-line profile from self-authorizing an N/A.
+
 **Read→write flow (the standard):** `/project:prd` writes `prd.md` → `/project:architecture` reads `prd.md`, writes `architecture.md` → `/spec:api-contract` reads `architecture.md`, writes `api-contract.md` → `/dev:implement-feature` reads `tasks.md` + contracts, logs to `decisions.md` → `/test:*` writes `tests.md` → `/release:preflight` writes `release.md` → this skill writes `handoff.md`. A file that doesn't exist yet is created on first write; missing files are never an error, just a gap `/solo:self-check` reports.
 
 **Rules every skill follows** (including third-party skills that want to integrate):
@@ -85,7 +101,15 @@ Consequence: use TEXT+CHECK not ENUM to keep portability.
 
 ## Mode: initialize
 
-If `.solo/` doesn't exist on a real project: create the directory, seed `tasks.md`, `decisions.md`, `handoff.md` with the templates above (leave prd/architecture/design for their skills, and `stack.md` for `/stack:intake` — running it early is recommended so every command is stack-aware), and **add one line to the project's `CLAUDE.md`** (create it if absent):
+If `.solo/` doesn't exist on a real project: ask the user to select one of the
+six canonical project-profile slugs above (never infer it from repository
+contents), create the directory, and seed `project.md`, `tasks.md`,
+`decisions.md`, and `handoff.md` with the templates above. Put the selected
+profile in `project.md` using the exact standalone field, and remind the user
+that it must be committed before gate evidence can be recorded. Leave
+prd/architecture/design for their skills, and `stack.md` for `/stack:intake`
+— running it early is recommended so every command is stack-aware. Also
+**add one line to the project's `CLAUDE.md`** (create it if absent):
 
 ```
 Project memory lives in .solo/ — read handoff.md and tasks.md at session start; update them when work state changes.

@@ -57,6 +57,11 @@ def fetch(url, follow_redirects=True, method="GET"):
         r = safe_get(url, method=method, follow_redirects=follow_redirects,
                      timeout=TIMEOUT, allow_http=True, read_body=False,
                      headers={"User-Agent": UA, "Accept-Encoding": "gzip, br"})
+        final_url = getattr(r, "url", url)
+        if (follow_redirects and not
+                same_audit_origin(url, final_url, allow_http_upgrade=True)):
+            return (None, {"_error": "redirected to unrelated origin %s" %
+                           final_url}, [])
         return r.status, dict(
             (k.lower(), v) for k, v in r.headers.items()
         ), r.headers.get_all("Set-Cookie") or []
@@ -68,9 +73,37 @@ def fetch(url, follow_redirects=True, method="GET"):
 
 def same_site(host_a, host_b):
     """Same host, or one is the www. variant of the other."""
-    a, b = host_a.lower().split(":")[0], host_b.lower().split(":")[0]
+    def normalize(value):
+        try:
+            parsed = urlparse(value if "://" in value else "//" + value)
+            host = parsed.hostname
+            if not host:
+                return None
+            return host.rstrip(".").encode("idna").decode("ascii").lower()
+        except (UnicodeError, ValueError):
+            return None
+
+    a, b = normalize(host_a), normalize(host_b)
+    if not a or not b:
+        return False
     strip = lambda h: h[4:] if h.startswith("www.") else h
     return strip(a) == strip(b)
+
+
+def same_audit_origin(left, right, allow_http_upgrade=False):
+    """Require the same host/effective port, allowing only 80-to-443 upgrade."""
+    try:
+        a, b = urlparse(left), urlparse(right)
+        a_port = a.port or (443 if a.scheme.lower() == "https" else 80)
+        b_port = b.port or (443 if b.scheme.lower() == "https" else 80)
+    except ValueError:
+        return False
+    if not same_site(left, right):
+        return False
+    if a.scheme.lower() == b.scheme.lower():
+        return a_port == b_port
+    return bool(allow_http_upgrade and a.scheme.lower() == "http" and
+                b.scheme.lower() == "https" and a_port == 80 and b_port == 443)
 
 
 def check_https_redirect(url, max_hops=5):
@@ -99,13 +132,25 @@ def check_https_redirect(url, max_hops=5):
                 location = urljoin(current, location)
                 nxt = urlparse(location)
             hops += 1
-            # every hop is validated: scheme + related host
+            # Every hop is bound to a valid expected host and effective port.
             if nxt.scheme == "http" and hops > 1:
                 report("FAIL", f"Redirect chain downgrades to http at hop {hops}: {location}")
                 return
-            if nxt.netloc and not same_site(nxt.netloc, expected_host):
-                report("FAIL", f"HTTP redirects to an UNRELATED host at hop {hops}: "
+            if nxt.scheme not in ("http", "https"):
+                report("FAIL", f"HTTP redirect hop {hops} has no valid absolute "
+                               f"HTTP(S) destination: {location}")
+                return
+            if nxt.scheme == "http" and not same_audit_origin(current, location):
+                report("FAIL", f"HTTP redirects to an UNRELATED origin at hop {hops}: "
                                f"{location} (expected {expected_host}) — not counted "
+                               "as an HTTPS upgrade")
+                return
+            if nxt.scheme == "https" and (
+                    not same_audit_origin(current, location,
+                                          allow_http_upgrade=True) or
+                    not same_audit_origin(url, location)):
+                report("FAIL", f"HTTP redirects to an UNRELATED origin at hop {hops}: "
+                               f"{location} (expected {url}) — not counted "
                                "as an HTTPS upgrade")
                 return
             if status in (302, 307) and hops == 1:
@@ -143,12 +188,21 @@ def validate_csp(value):
     and materially incomplete production policies FAIL; unsafe-eval and
     nonce-less unsafe-inline never pass."""
     directives = {}
+    duplicates = set()
     for part in value.split(";"):
         part = part.strip()
         if not part:
             continue
         name = part.split(None, 1)[0].lower()
+        if name in directives:
+            duplicates.add(name)
+            continue
         directives[name] = part[len(name):].strip()
+    if duplicates:
+        return ("FAIL", "content-security-policy has duplicate directive(s) "
+                        "%s; browsers honor the first occurrence, so later "
+                        "safer-looking values cannot justify a pass" %
+                        sorted(duplicates))
     recognized = set(directives) & KNOWN_CSP_DIRECTIVES
     if not recognized:
         return ("FAIL", "content-security-policy present but INVALID - no "
@@ -448,6 +502,10 @@ def main(urls):
             exit_code = max(exit_code, 2)
             continue
         print(f"  Status: {status}")
+        if not 200 <= status < 300:
+            report("FAIL", f"Target returned HTTP {status}; headers on an "
+                   "unsuccessful response do not prove production readiness")
+            continue
         check_https_redirect(url)
         check_security_headers(headers)
         check_caching_and_compression(headers)

@@ -518,7 +518,13 @@ class EvidenceTrustLanguage(unittest.TestCase):
                       readme)
         self.assertIn('--certificate-identity "$CERT_ID"', readme)
         self.assertIn('--bundle "$payload.sigstore.json"', readme)
-        self.assertIn("done < RELEASE-SHA256SUMS", readme)
+        outer = readme.index(
+            "cosign verify-blob SIGNED-BUNDLE-SHA256SUMS")
+        release = readme.index("cosign verify-blob RELEASE-SHA256SUMS")
+        self.assertLess(outer, release)
+        self.assertIn("release does not contain the exact 18 assets", readme)
+        self.assertIn('for payload in "${payloads[@]}"', readme)
+        self.assertNotIn("done < RELEASE-SHA256SUMS", readme)
         self.assertIn("never\nfrom the untrusted bundle", readme)
 
     def test_superseded_root_patch_notes_do_not_ship(self):

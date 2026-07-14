@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from email.message import Message
 from types import SimpleNamespace
 from unittest import mock
 
@@ -41,7 +42,7 @@ def capture(fn, *a, **kw):
 
 class CheckHeaders(unittest.TestCase):
     def setUp(self):
-        headers_mod.results.update(PASS=0, WARN=0, FAIL=0)
+        headers_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
         self._fetch = headers_mod.fetch
         self.addCleanup(lambda: setattr(headers_mod, "fetch", self._fetch))
 
@@ -90,7 +91,7 @@ class CheckHeaders(unittest.TestCase):
         headers_mod.fetch = lambda url, **kw: (
             301, {"location": "https://evil.example/phish"}, [])
         out = capture(headers_mod.check_https_redirect, "https://example.com/")
-        self.assertIn("UNRELATED host", out)
+        self.assertIn("UNRELATED origin", out)
         self.assertNotIn("redirects permanently to HTTPS (same site)", out)
 
     def test_redirect_to_www_variant_passes(self):
@@ -98,6 +99,40 @@ class CheckHeaders(unittest.TestCase):
             301, {"location": "https://www.example.com/"}, [])
         out = capture(headers_mod.check_https_redirect, "https://example.com/")
         self.assertIn("(same site)", out)
+
+    def test_same_site_parses_ipv6_structurally(self):
+        self.assertTrue(headers_mod.same_site(
+            "[2001:db8::1]:443", "[2001:db8::1]:8443"))
+        self.assertFalse(headers_mod.same_site(
+            "[2001:db8::1]:443", "[2001:db8::2]:443"))
+
+    def test_fetch_rejects_unrelated_final_redirect_host(self):
+        headers = Message()
+        response = SimpleNamespace(
+            status=200, headers=headers,
+            url="https://elsewhere.example/", body=None, truncated=False)
+        with mock.patch.object(headers_mod, "safe_get", return_value=response):
+            status, returned, _cookies = headers_mod.fetch(
+                "https://target.example/")
+        self.assertIsNone(status)
+        self.assertIn("unrelated origin", returned["_error"])
+
+        response.url = "https://target.example:8443/"
+        with mock.patch.object(headers_mod, "safe_get", return_value=response):
+            status, returned, _cookies = headers_mod.fetch(
+                "https://target.example/")
+        self.assertIsNone(status)
+        self.assertIn("unrelated origin", returned["_error"])
+
+    def test_https_upgrade_rejects_alt_port_and_hostless_destination(self):
+        for location in ("https://example.com:8443/", "https:garbage"):
+            headers_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
+            headers_mod.fetch = lambda url, **kw: (
+                301, {"location": location}, [])
+            out = capture(headers_mod.check_https_redirect,
+                          "https://example.com/")
+            self.assertIn("[FAIL]", out, location)
+            self.assertNotIn("redirects permanently to HTTPS", out, location)
 
     def test_every_redirect_hop_validated(self):
         """Defect 4: only the first hop used to be inspected."""
@@ -107,7 +142,25 @@ class CheckHeaders(unittest.TestCase):
             (301, {"location": hops[url]}, []) if url in hops
             else (200, {}, []))
         out = capture(headers_mod.check_https_redirect, "https://example.com/")
-        self.assertIn("UNRELATED host at hop 2", out)
+        self.assertIn("UNRELATED origin at hop 2", out)
+
+    def test_duplicate_csp_directive_fails_with_unsafe_first_value(self):
+        value = "default-src 'self'; script-src *; script-src 'self'"
+        level, message = headers_mod.validate_csp(value)
+        self.assertEqual(level, "FAIL")
+        self.assertIn("duplicate directive", message)
+        self.assertIn("script-src", message)
+
+        headers_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
+        capture(headers_mod.check_security_headers, {
+            "strict-transport-security": "max-age=63072000",
+            "x-content-type-options": "nosniff",
+            "content-security-policy": value,
+        })
+        self.assertGreater(headers_mod.results["FAIL"], 0)
+        with contextlib.redirect_stdout(io.StringIO()):
+            rc = headers_mod.main([])
+        self.assertEqual(rc, 1)
 
 
 class CheckLinks(unittest.TestCase):
@@ -187,7 +240,7 @@ class CheckLinks(unittest.TestCase):
 
 class CheckEmailDns(unittest.TestCase):
     def setUp(self):
-        email_mod.results.update(PASS=0, WARN=0, FAIL=0)
+        email_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
         self._q = email_mod.dns_query
         self.addCleanup(lambda: setattr(email_mod, "dns_query", self._q))
 
@@ -214,6 +267,91 @@ class CheckEmailDns(unittest.TestCase):
         self.fake_dns({"_dmarc.example.com": ["v=DMARC1; p=reject; rua=mailto:d@e.com"]})
         out = capture(email_mod.check_dmarc, "example.com")
         self.assertIn("p=reject — strongest", out)
+
+    def test_dmarc_rejects_multiple_duplicate_and_misordered_records(self):
+        cases = [
+            ["v=DMARC1; p=reject", "v=DMARC1; p=none"],
+            ["v=DMARC1; p=reject; p=none"],
+            ["p=reject; v=DMARC1; rua=mailto:d@example.com"],
+        ]
+        for records in cases:
+            email_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
+            self.fake_dns({"_dmarc.example.com": records})
+            out = capture(email_mod.check_dmarc, "example.com")
+            self.assertIn("[FAIL]", out, records)
+            self.assertNotIn("DMARC present", out, records)
+
+    def test_dkim_requires_one_exact_nonempty_p_tag(self):
+        cases = [
+            ["v=DKIM1; p=; t=y"],
+            ["v=DKIM1; np=abc; p="],
+            ["v=DKIM1; p=abc; p="],
+            ["p=abc; v=DKIM1"],
+            ["v=DKIM1; p=abc", "v=DKIM1; p=def"],
+        ]
+        name = "s1._domainkey.example.com"
+        for records in cases:
+            email_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
+            self.fake_dns({name: records})
+            out = capture(email_mod.check_dkim, "example.com", "s1")
+            self.assertIn("[FAIL]", out, records)
+            self.assertNotIn("DKIM key found", out, records)
+
+    def test_ambiguous_auth_record_makes_full_helper_fail(self):
+        def query(name, rrtype):
+            if rrtype == "MX":
+                return ["10 mail.example.com."]
+            if name == "example.com":
+                return ["v=spf1 -all"]
+            if name == "_dmarc.example.com":
+                return ["v=DMARC1; p=reject; p=none"]
+            if name == "s1._domainkey.example.com":
+                return ["v=DKIM1; p=abc"]
+            return []
+
+        email_mod.dns_query = query
+        with mock.patch.object(sys, "argv", [
+                "check_email_dns.py", "example.com", "--dkim-selector",
+                "s1"]):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                rc = email_mod.main()
+        self.assertEqual(rc, 1, output.getvalue())
+        self.assertIn("duplicate tag(s): p", output.getvalue())
+
+    def test_spf_exact_version_and_default_all_qualifier_fail_closed(self):
+        def run_with_spf(spf):
+            def query(name, rrtype):
+                if rrtype == "MX":
+                    return ["10 mail.example.com."]
+                if name == "example.com":
+                    return [spf]
+                if name == "_dmarc.example.com":
+                    return ["v=DMARC1; p=reject; rua=mailto:d@example.com"]
+                if name == "s1._domainkey.example.com":
+                    return ["v=DKIM1; p=abc"]
+                return []
+
+            email_mod.dns_query = query
+            with mock.patch.object(sys, "argv", [
+                    "check_email_dns.py", "example.com", "--dkim-selector",
+                    "s1"]):
+                output = io.StringIO()
+                with contextlib.redirect_stdout(output):
+                    rc = email_mod.main()
+            return rc, output.getvalue()
+
+        for record in ("v=spf1 all", "v=spf10 -all"):
+            rc, out = run_with_spf(record)
+            self.assertNotEqual(rc, 0, (record, out))
+            self.assertIn("[FAIL]", out, record)
+
+        email_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
+        self.fake_dns({"example.com": [
+            "v=spf1 include:mail-all.example ~all"]})
+        out = capture(email_mod.check_spf, "example.com")
+        self.assertIn("exact '~all' softfail", out)
+        self.assertNotIn("hardfail mechanism", out)
 
     def test_nested_spf_lookups_counted(self):
         """Defect: nested include: lookups were not counted."""
@@ -266,6 +404,60 @@ class ExtractMeta(unittest.TestCase):
         p = self.parse("<h1></h1>")
         self.assertEqual(p.h1s, [""])
 
+    def test_fetch_rejects_terminal_statuses_and_cross_host_final(self):
+        headers = Message()
+        headers["Content-Type"] = "text/html; charset=utf-8"
+        body = (b"<html><head><title>x</title></head><body><h1>x</h1>"
+                b"</body></html>")
+        for status in (300, 302, 304):
+            response = SimpleNamespace(
+                status=status, headers=headers, body=body, truncated=False,
+                url="https://target.example/")
+            with mock.patch.object(meta_mod, "safe_get",
+                                   return_value=response):
+                result = meta_mod.fetch("https://target.example/")
+            self.assertIsNone(result[1], status)
+            self.assertEqual(result[3][0], "http-error", status)
+        response = SimpleNamespace(
+            status=200, headers=headers, body=body, truncated=False,
+            url="https://elsewhere.example/")
+        with mock.patch.object(meta_mod, "safe_get", return_value=response):
+            result = meta_mod.fetch("https://target.example/")
+        self.assertEqual(result[3][0], "redirect-host")
+        self.assertIsNone(result[1])
+
+        response.url = "https://target.example:8443/"
+        with mock.patch.object(meta_mod, "safe_get", return_value=response):
+            result = meta_mod.fetch("https://target.example/")
+        self.assertEqual(result[3][0], "redirect-host")
+        self.assertIsNone(result[1])
+
+    def test_alt_port_link_is_not_enqueued(self):
+        headers = Message()
+        headers["Content-Type"] = "text/html; charset=utf-8"
+        body = (b"<html><head><title>x</title>"
+                b"<meta name='description' content='x'></head>"
+                b"<body><h1>x</h1>"
+                b"<a href='https://target.example:8443/secret'>bad</a>"
+                b"</body></html>")
+        calls = []
+
+        def safe_get(url, **_kwargs):
+            calls.append(url)
+            return SimpleNamespace(status=200, headers=headers, body=body,
+                                   truncated=False, url=url)
+
+        argv = ["extract_meta.py", "https://target.example/",
+                "--max-pages", "2", "--delay", "0"]
+        with mock.patch.object(meta_mod, "safe_get", side_effect=safe_get), \
+                mock.patch.object(meta_mod, "check_url"), \
+                mock.patch.object(sys, "argv", argv):
+            output = io.StringIO()
+            with contextlib.redirect_stdout(output):
+                rc = meta_mod.main()
+        self.assertEqual(rc, 0, output.getvalue())
+        self.assertEqual(calls, ["https://target.example/"])
+
 
 class ScanTrackers(unittest.TestCase):
     def test_img_src_not_double_counted(self):
@@ -284,6 +476,35 @@ class ScanTrackers(unittest.TestCase):
         self.assertIn("Structural parse", src)
         self.assertIn('partition("=")', src)
         self.assertNotIn('if f in low', src)
+
+    def test_fetch_rejects_terminal_statuses_and_cross_host_final(self):
+        headers = Message()
+        headers["Content-Type"] = "text/html; charset=utf-8"
+        body = b"<html><head><title>x</title></head><body></body></html>"
+        for status in (300, 302, 304):
+            response = SimpleNamespace(
+                status=status, headers=headers, body=body, truncated=False,
+                url="https://target.example/")
+            with mock.patch.object(trackers_mod, "safe_get",
+                                   return_value=response):
+                result = trackers_mod.fetch("https://target.example/")
+            self.assertIn("HTTP %s" % status, result[3])
+            self.assertFalse(result[2])
+        response = SimpleNamespace(
+            status=200, headers=headers, body=body, truncated=False,
+            url="https://elsewhere.example/")
+        with mock.patch.object(trackers_mod, "safe_get",
+                               return_value=response):
+            result = trackers_mod.fetch("https://target.example/")
+        self.assertIn("unrelated origin", result[3])
+        self.assertFalse(result[2])
+
+        response.url = "https://target.example:8443/"
+        with mock.patch.object(trackers_mod, "safe_get",
+                               return_value=response):
+            result = trackers_mod.fetch("https://target.example/")
+        self.assertIn("unrelated origin", result[3])
+        self.assertFalse(result[2])
 
 
 class CheckDeps(unittest.TestCase):
@@ -340,7 +561,7 @@ class AdversarialV1012(unittest.TestCase):
 
     # ---- check_headers: structural cookie attribute parsing ----------------
     def setUp(self):
-        headers_mod.results.update(PASS=0, WARN=0, FAIL=0)
+        headers_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
 
     def test_cookie_value_containing_flag_words_is_not_flagged(self):
         """A VALUE containing 'secure'/'httponly'/'samesite' must not count
@@ -407,7 +628,7 @@ class AdversarialV1012(unittest.TestCase):
         self.assertTrue(capped)
 
     def test_capped_count_never_reports_pass(self):
-        email_mod.results.update(PASS=0, WARN=0, FAIL=0)
+        email_mod.results.update(PASS=0, WARN=0, FAIL=0, UNVERIFIED=0)
         self._fake({
             "example.com": ["v=spf1 include:gone.example ~all"],
             # gone.example resolves to nothing -> capped

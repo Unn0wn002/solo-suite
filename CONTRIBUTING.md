@@ -47,29 +47,55 @@ candidate with one enclosing top-level folder, `SHA256SUMS`, `sbom.json`, and
 disposable project outside the repository and running helpers from a foreign
 working directory. Do not publish a local candidate as canonical. Pushing the
 reviewed `v<version>` tag triggers three isolated CI stages: a read-only build,
-an OIDC-only signer, and a contents-write-only publisher. Checksums are
-revalidated at every artifact boundary; the publisher creates a draft, downloads
-every remote asset again, byte-compares and signature-verifies it, and only then
-promotes the release.
+a keyless signer (`contents: read` plus `id-token: write`, with no repository
+write permission), and a publisher (`contents: write`, with no checkout or OIDC
+permission). Checksums are revalidated at every artifact boundary; the publisher
+creates a draft, downloads every remote asset again, byte-compares and
+signature-verifies it, promotes the release, and then verifies a fresh public
+download before declaring success.
 
-Repository administrators must configure the `release-signing` and
-`release-publishing` GitHub environments with the intended branch/tag and
-required-reviewer protection rules. Workflow YAML can name those environments,
-but it cannot prove their repository-side settings. Treat an unprotected or
-unverified environment as a release-process blocker.
+Repository administrators must restrict both the `release-signing` and
+`release-publishing` GitHub environments to the intended `v*` tag pattern.
+`release-signing` intentionally has no reviewer gate: its job can obtain only a
+short-lived OIDC signing identity and cannot publish repository content.
+`release-publishing` is the human approval boundary and must require the
+intended reviewer(s) before its contents-write job can run. A single-maintainer
+repository may allow self-review deliberately, but that repository-side choice
+must be checked and recorded. Workflow YAML can name these environments, but it
+cannot prove their deployment-branch/tag or reviewer settings. Treat an
+unprotected or unverified publishing environment as a release-process blocker.
 
-For v1.0.25, publish in two reviewed stages from PowerShell. Supply the remote
+Before pushing any `v*` tag, a repository administrator must also enable
+[GitHub Immutable Releases](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/prevent-release-changes)
+and configure an **active tag ruleset** whose include pattern is exactly
+`refs/tags/v*` (or `~ALL`), whose exclude list is empty, and whose rules restrict
+both tag updates and tag deletions. The ruleset must have no bypass actors; a
+bypass would reopen the tag-movement window while a draft is being promoted.
+GitHub
+[omits `bypass_actors` unless the caller has ruleset write access](https://docs.github.com/en/rest/repos/rules?apiVersion=2026-03-10#get-a-repository-ruleset),
+so store a fine-grained `RELEASE_SETTINGS_AUDIT_TOKEN` scoped only to this
+repository with repository **Administration: write** in the protected
+`release-publishing` environment. This elevated scope is required to prove that
+the bypass list is empty. The no-checkout preflight exposes the token only to
+one inline step and also requires GitHub to report
+`current_user_can_bypass: never`; every request in that step uses `GET`. The
+token is not available to the artifact download or release-write steps. Release
+writes use the separate short-lived workflow token. The workflow never changes
+repository settings. A missing secret, disabled immutable-release setting, or
+nonconforming tag ruleset blocks the release.
+
+For v1.0.26, publish in two reviewed stages from PowerShell. Supply the remote
 HEAD OID you independently checked; the first helper refuses a changed remote,
 verifies the complete candidate inventory/provenance, and pushes only
-`release/v1.0.25` (never `main`):
+`release/v1.0.26` (never `main`):
 
 ```powershell
 $remote = "https://github.com/unn0wn002/solo-suite.git"
 $expectedRemoteHead = "<reviewed 40-hex remote HEAD OID>"
-$result = & .\release\prepare-release-branch-v1.0.25.ps1 `
+$result = & .\release\prepare-release-branch-v1.0.26.ps1 `
   -RemoteUrl $remote `
   -ExpectedRemoteHead $expectedRemoteHead `
-  -ReleaseZip .\dist\solo-suite-plugin-v1.0.25.zip `
+  -ReleaseZip .\dist\solo-suite-plugin-v1.0.26.zip `
   -Sha256Sums .\dist\SHA256SUMS `
   -Provenance .\dist\provenance.json
 $result
@@ -80,12 +106,12 @@ Review the pushed branch and its PR. Only after approving the exact
 second helper:
 
 ```powershell
-& .\release\publish-approved-tag-v1.0.25.ps1 `
+& .\release\publish-approved-tag-v1.0.26.ps1 `
   -RemoteUrl $remote `
   -ApprovedCommitOid "<approved 40-hex OID>"
 ```
 
-That helper requires `release/v1.0.25` still to equal the approved OID and
+That helper requires `release/v1.0.26` still to equal the approved OID and
 refuses an existing tag. The tag triggers the canonical CI rebuild; the local
 candidate is not the canonical published artifact. Neither helper merges or
 pushes `main`.

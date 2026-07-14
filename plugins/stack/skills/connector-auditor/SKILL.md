@@ -1,11 +1,11 @@
 ---
 name: connector-auditor
-description: Use live Vercel, Supabase, GitHub, and Cloudflare data when a connector or MCP is available, instead of guessing from local files. Use when auditing those services, testing RLS against the real schema, or syncing issues, and you want real configuration rather than assumptions. Three tiers — live (connector/MCP/API) → local config files → neither. Read-only for audits; writes only via an explicit command with confirmation.
+description: Use live Vercel, Supabase, GitHub, and Cloudflare data when a connector or MCP is available, instead of guessing from local files. Use when auditing those services, testing RLS against the real schema, or syncing issues, and you want real configuration rather than assumptions. Three tiers — live (connector/MCP/API) → local config files → neither. Vendor probes are read-only; local project-memory updates are allowed, while external writes require an explicit command with confirmation.
 ---
 
 # Connector Auditor
 
-Audits are only as good as their inputs. This skill gets the *real* configuration when it can, and is honest about which tier it used. **Read-only when auditing** — it inspects, it doesn't change infrastructure; the one write path (creating/closing GitHub issues via `/git:sync-issues`) always confirms first.
+Audits are only as good as their inputs. This skill gets the *real* configuration when it can, and is honest about which tier it used. **Read-only toward vendor infrastructure when auditing** — it inspects, it does not change remote services. `/stack:connector-check` may update only the local `.solo/stack.md` connector section. The external write path (creating/closing GitHub issues via `/git:sync-issues`) always confirms first.
 
 ## The three tiers (try in order, state which you used)
 1. **Live** — a connector / MCP / API is available: pull real data read-only.

@@ -1,5 +1,89 @@
 # Changelog
 
+## 1.0.26 — 2026-07-14
+
+Fail-closed audit and release-verification hardening. A pre-merge review of
+the published v1.0.25 tree reproduced multiple paths where unavailable,
+unsuccessful, ambiguous, or misbound evidence could still be reported as
+success. These included an indeterminate Git tracking check; DNS transport
+failures and truncated answers; terminal 3xx responses with clean-looking
+bodies; unrelated-host or alternate-port redirect targets credited to the
+requested URL; permissive charset decoding; ambiguous DMARC/DKIM tag records;
+and an SEO trailing-slash rewrite that changed relative-link resolution.
+The published v1.0.25 artifacts remain the record of that build; v1.0.26 is
+the corrected successor.
+
+Gate evidence now rejects an unverifiable tracking state, and monitoring
+evidence no longer accepts the email-DNS helper in place of the committed
+health contract. Email DNS reports validated, unavailable, and incomplete
+coverage distinctly and returns a nonzero status when the result cannot
+support a pass. DNS JSON now rejects resolver truncation, contradictory
+NXDOMAIN answers, duplicate authentication records/tags, misplaced version
+tags, and empty DKIM keys; SPF requires an exact `v=spf1` term and treats bare
+`all` as its fail-open default `+` qualifier. Tracker and SEO scans require a successful 2xx HTML
+response, strict supported decoding, and a final host/effective-port binding;
+SEO preserves directory URL semantics and resolves links against the final
+page URL. Header audits fail every non-2xx target and reject an unrelated final
+redirect host using structural hostname parsing, including IPv6; duplicate CSP
+directives fail instead of allowing a safer-looking later value to overwrite
+the browser-effective first directive. Regression
+tests exercise each reproduced failure and alternate-port/redirect variants.
+
+### Gate and runtime hardening
+
+- Bound every N/A verdict to the single canonical `Project profile: <recognized-slug>` field in committed `.solo/project.md`: recorder/checker now reject missing, malformed, ambiguous, symlink-backed, caller-selected, or CLI-mismatched profile sources.
+- Removed the production checker's caller-controlled clock, bounded its
+  freshness window and recorder validity to 1-7 days, and added replay tests
+  proving expired evidence cannot be made current through CLI flags.
+- Made project-memory initialization the explicit owner of that canonical
+  profile field; initialization asks for one recognized slug rather than
+  inferring a gate policy from repository contents.
+
+Canonical release verification now uses exact 7-payload, 8-unsigned-file,
+16-signed-member, and 18-public-asset allowlists at every boundary. The
+publisher authenticates
+the signed outer manifest first and, after promotion, performs a fresh public
+download followed by the same exact-set, checksum, and signature checks before
+success. Publication now fails closed unless GitHub Immutable Releases are
+enabled and an active, no-bypass `refs/tags/v*` ruleset restricts tag updates
+and deletions. A protected, repository-scoped Administration-write audit token
+performs GET-only settings checks because GitHub otherwise withholds the bypass
+list; release writes continue to use the separate short-lived workflow token.
+The publisher API-peels the annotated tag immediately before
+release creation and promotion and again after public verification, requiring
+the target to equal the event commit. It also binds the authenticated, signed
+`provenance.json` commit, version, and clean-source state to that tag event at
+the upload, draft-download, and public-download boundaries. Contributor
+guidance documents the privilege split and repository-side prerequisites:
+automatic keyless signing has read + OIDC permissions and no reviewer gate,
+while the contents-write publisher is the protected human approval boundary.
+
+Documentation and workflow contracts were aligned with the implementation:
+the full-team meta-plugin no longer invents dependency version floors from its
+names-only dependency list; AgentRooms describes the enforced one-writer-per-
+artifact-per-stage rule; `/solo:full-team-dev` distinguishes the
+INTEGRATION_SHA review-to-docs band from the FINAL_SHA finalizer/gate band;
+`/stack:connector-check` is restored to the stack manifest's command inventory
+and distinguishes read-only vendor probes from its local `.solo/stack.md`
+update; and the README gate inventory includes
+`/gate:finalize-evidence`. The site-doctor cheatsheet and OOXML core metadata
+now identify site-doctor v3.6.3 and solo-suite 1.0.26. Version-bound release
+helpers and their integration tests now target only `release/v1.0.26` and
+`v1.0.26`. The shipped release-versioning tests verify normalized package
+bytes without assuming the public ZIP contains Git metadata, while retaining
+the stronger `git check-attr` assertions in an actual checkout.
+
+### Versions
+
+- ai 2.5.3 -> 2.5.4 (AgentRooms writer-scope contract)
+- gate 2.5.3 -> 2.5.4 (fail-closed evidence and monitoring policy)
+- site-doctor 3.6.2 -> 3.6.3 (network-audit completeness semantics)
+- solo 1.9.3 -> 1.9.4 (INTEGRATION_SHA / FINAL_SHA phase bands)
+- stack 1.4.3 -> 1.4.4 (connector read/write boundary wording)
+- full-team meta-plugin 1.0.1 -> 1.0.2 (names-only dependency truth)
+- other 12 component plugins: unchanged from v1.0.25
+- marketplace 1.0.25 -> 1.0.26
+
 ## 1.0.25 — 2026-07-13
 
 Windows run-state lock bootstrap repair. The reviewed v1.0.24 branch passed
@@ -30,7 +114,7 @@ its lock path on platforms that permit symlink creation.
 ### Versions
 
 - gate 2.5.2 -> 2.5.3
-- other 17 component plugins: unchanged from v1.0.20
+- other 16 component plugins and the full-team meta-plugin: unchanged from v1.0.20
 - marketplace 1.0.20 -> 1.0.25
 
 ## 1.0.24 — 2026-07-13
@@ -52,7 +136,7 @@ no-checkout privilege boundary without relying on a local `.git` directory.
 
 ### Versions
 
-- all 18 component plugins: unchanged (no plugin tree changed from v1.0.20)
+- all 17 component plugins and the full-team meta-plugin: unchanged (no plugin tree changed from v1.0.20)
 - marketplace 1.0.20 -> 1.0.24
 
 ## 1.0.23 — 2026-07-13
@@ -78,7 +162,7 @@ can no longer silently displace the verified drift baseline.
 
 ### Versions
 
-- all 18 component plugins: unchanged (no plugin tree changed from v1.0.20)
+- all 17 component plugins and the full-team meta-plugin: unchanged (no plugin tree changed from v1.0.20)
 - marketplace 1.0.20 -> 1.0.23
 
 ## 1.0.22 — 2026-07-13
@@ -101,7 +185,7 @@ attributes for representative plugin files and the bundled DOCX.
 
 ### Versions
 
-- all 18 component plugins: unchanged (no plugin tree changed from v1.0.20)
+- all 17 component plugins and the full-team meta-plugin: unchanged (no plugin tree changed from v1.0.20)
 - marketplace 1.0.20 -> 1.0.22
 
 ## 1.0.21 — 2026-07-13
@@ -129,7 +213,7 @@ that baseline to the marketplace transition recorded here.
 
 ### Versions
 
-- all 18 component plugins: unchanged (no plugin tree changed from v1.0.20)
+- all 17 component plugins and the full-team meta-plugin: unchanged (no plugin tree changed from v1.0.20)
 - marketplace 1.0.20 -> 1.0.21
 
 ## 1.0.20 — 2026-07-13

@@ -250,9 +250,8 @@
               "description": "The '<category>:<profile>' matrix cell this N/A claims; the checker verifies the cell is permitted."
             },
             "profile_source": {
-              "type": "string",
-              "minLength": 1,
-              "description": "Where the project profile is recorded (e.g. .solo/project.md)."
+              "const": ".solo/project.md",
+              "description": "Canonical committed source for the project profile. The recorder and checker read the single `Project profile: <recognized-slug>` field from HEAD:.solo/project.md; caller-selected sources are forbidden."
             },
             "checked": {
               "type": "array",

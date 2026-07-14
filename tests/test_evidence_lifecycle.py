@@ -197,6 +197,8 @@ class EvidenceLifecycle(unittest.TestCase):
                                "version-endpoint: %s/version\n"
                                "health-endpoint: %s/health\n"
                                % (BASE_URL, BASE_URL, BASE_URL)),
+            ".solo/project.md": ("# Project\n\n"
+                                 "Project profile: library-package\n"),
             "lib.py": "def add(a, b):\n    return a + b\n",
             "test_lib.py": ("import unittest\nimport lib\n"
                             "class T(unittest.TestCase):\n"

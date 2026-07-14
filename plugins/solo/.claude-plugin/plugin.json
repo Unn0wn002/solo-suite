@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "solo",
   "displayName": "solo-suite solo",
-  "version": "1.9.3",
+  "version": "1.9.4",
   "description": "The heart of the solo workflow: persistent project memory across sessions, syncing it outward, self-checking the whole suite, and orchestrating the full team. Skills: project-memory-manager (owns the standard 16-file .solo/ contract), memory-sync (Obsidian + Grafana; manual-only, dry-run first, tokens from environment variables only), suite-integrity (mechanical self-check with a stdlib script). /solo:full-team-dev uses local static security checks during automation and creates an explicit human handoff for live or side-effecting checks. Commands: /solo:start-session, /solo:end-session, /solo:run-cycle, /solo:full-team-dev (idea → production, gates enforced), /solo:handoff-memory, /solo:next-step, /solo:project-status, /solo:self-check, /solo:sync-obsidian, /solo:sync-grafana.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

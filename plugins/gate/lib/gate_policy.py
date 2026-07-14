@@ -93,6 +93,7 @@ assert set(NA_ALLOWED) | MANDATORY == CATEGORIES
 
 EVIDENCE_DIR = ".solo/gate-evidence"
 RUN_STATE_DIR = ".solo/run-state"
+PROJECT_PROFILE_SOURCE = ".solo/project.md"
 # Untracked-by-design runtime directories: evidence records and run SHAs
 # (BASE/INTEGRATION/FINAL) live here so that writing them never changes the
 # commit they describe. Both must be gitignored.
@@ -1076,16 +1077,16 @@ COMMAND_POLICY = {
     # COMMITTED version-endpoint answering with the derived HEAD (the
     # deployed result is bound to FINAL_SHA — a generic 200 proves
     # nothing). Monitoring = the COMMITTED health-endpoint answering an
-    # explicit status/body/JSON health contract under a bounded timeout,
-    # or the stack's email DNS; a generic homepage curl and `gh run view`
-    # were removed from monitoring in v1.0.17 (a green CI run is not a
-    # monitor). `gh release view` was removed earlier: an arbitrary old
-    # release cannot prove the current commit. When none of these is
-    # executable, the category stays UNVERIFIED and the gate is BLOCKED —
-    # by design.
+    # explicit status/body/JSON health contract under a bounded timeout.
+    # Email DNS authentication is deliverability configuration, not evidence
+    # that uptime/error monitoring is live. A generic homepage curl and
+    # `gh run view` were removed from monitoring in v1.0.17 (a green CI run
+    # is not a monitor). `gh release view` was removed earlier: an arbitrary
+    # old release cannot prove the current commit. When the health contract
+    # is not executable, the category stays UNVERIFIED and the gate is
+    # BLOCKED — by design.
     "deployment": [_v_gh_run_view, _v_curl_endpoint("deployment")],
-    "monitoring": [_v_curl_endpoint("monitoring"),
-                   _v_bundled("check_email_dns.py", "domain")],
+    "monitoring": [_v_curl_endpoint("monitoring")],
     "documentation": [_v_markdownlint, _v_doctest,
                       _v_verify_artifact("documentation")],
 }
@@ -1174,6 +1175,63 @@ def git_head(root):
         return None
     head = out.decode("ascii", "replace").strip()
     return head if SHA_RE.match(head) else None
+
+
+def committed_project_profile(root):
+    """Return the one authoritative project profile committed at HEAD.
+
+    N/A evidence changes the denominator of the production gate, so its
+    profile may not come from a caller-selected file or mutable working-tree
+    bytes.  The canonical source is the regular git blob
+    ``HEAD:.solo/project.md`` and it must contain exactly one standalone line
+    of the form ``Project profile: <recognized-slug>``.  Returns
+    ``(profile, None)`` or ``(None, reason)`` and always fails closed.
+    """
+    rc, listing = _git(root, "ls-tree", "-z", "HEAD", "--",
+                       PROJECT_PROFILE_SOURCE)
+    if rc != 0:
+        return None, "could not inspect %s in the committed tree" % \
+            PROJECT_PROFILE_SOURCE
+    entries = [entry for entry in listing.split(b"\0") if entry]
+    if len(entries) != 1:
+        return None, ("%s must exist exactly once as a committed regular "
+                      "file" % PROJECT_PROFILE_SOURCE)
+    try:
+        meta, raw_path = entries[0].split(b"\t", 1)
+        mode, obj_type, _sha = meta.decode("ascii").split()
+        rel = raw_path.decode("utf-8", "strict")
+    except (UnicodeDecodeError, ValueError):
+        return None, "malformed git metadata for %s" % PROJECT_PROFILE_SOURCE
+    if (rel != PROJECT_PROFILE_SOURCE or obj_type != "blob"
+            or mode not in {"100644", "100755"}):
+        return None, ("%s must be a committed regular file (symlinks and "
+                      "other git object types are refused)" %
+                      PROJECT_PROFILE_SOURCE)
+    rc, raw = _git(root, "show", "HEAD:%s" % PROJECT_PROFILE_SOURCE)
+    if rc != 0:
+        return None, "could not read HEAD:%s" % PROJECT_PROFILE_SOURCE
+    try:
+        text = raw.decode("utf-8", "strict")
+    except UnicodeDecodeError:
+        return None, "%s is not valid UTF-8" % PROJECT_PROFILE_SOURCE
+    lines = text.splitlines()
+    declaration = re.compile(r"^[ \t]*Project profile[ \t]*:")
+    declarations = [line for line in lines if declaration.match(line)]
+    field = re.compile(r"^Project profile:[ \t]*([^ \t\r\n]+)[ \t]*$")
+    values = [match.group(1) for line in lines
+              for match in [field.match(line)] if match]
+    if len(declarations) != 1 or len(values) != 1:
+        return None, ("%s must contain exactly one canonical line "
+                      "`Project profile: <recognized-slug>` (found %d "
+                      "profile declaration(s), %d canonical)" %
+                      (PROJECT_PROFILE_SOURCE, len(declarations),
+                       len(values)))
+    profile = values[0]
+    if profile not in RECOGNIZED_PROFILES:
+        return None, ("%s records unrecognized project profile %r; choose "
+                      "one of %s" % (PROJECT_PROFILE_SOURCE, profile,
+                                     sorted(RECOGNIZED_PROFILES)))
+    return profile, None
 
 
 def _excluded(rel):

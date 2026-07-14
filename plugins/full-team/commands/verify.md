@@ -8,7 +8,11 @@ Check that each of the 17 component plugins is installed and its commands resolv
 
 - installed plugins with their versions
 - missing plugins, each with its exact install command (`/plugin install <name>@solo-suite`)
-- version mismatches against the meta-plugin's dependency floors
+- unresolved representative commands or missing skills directories
+
+The meta-plugin's `dependencies` array declares plugin **names only**. It does
+not declare version ranges or minimum-version floors, so report installed
+versions as informational evidence and never invent a "version mismatch."
 
 If everything is present, recommend `/solo:start-session` (new session) or `/solo:full-team-dev` (full cycle) as the next step.
 

@@ -39,15 +39,16 @@ THE GATE CONTRACT (exit 0 only when ALL hold):
     recorder format label, but that copyable value is not proof of origin;
     matrix-permitted category/profile (the seven MANDATORY categories —
     product, architecture, security, testing, deployment, monitoring,
-    documentation — are never N/A), recognized profile matching
-    --profile, substantive reason (>= 20 chars, >= 4 words), structured
-    applicability evidence, non-empty reviewer, exact HEAD
+    documentation — are never N/A), recognized profile matching both the
+    required --profile cross-check and the canonical field in committed
+    HEAD:.solo/project.md, substantive reason (>= 20 chars, >= 4 words),
+    structured applicability evidence, non-empty reviewer, exact HEAD
 
 Usage:
     python3 check_evidence.py <evidence-dir-or-file...>
         --root <dir> --environment <env> --project <name>
-        [--profile <profile>] [--commit <sha-that-must-equal-HEAD>]
-        [--max-age-days 7] [--now ISO] [--json]
+        --profile <profile> [--commit <sha-that-must-equal-HEAD>]
+        [--max-age-days 7] [--json]
 
 Exit 0 = complete and fully verified; 1 = any rejection, missing category,
 or unverifiable working state; 2 = usage error.
@@ -144,7 +145,10 @@ def check_na_applicability(rec, profile):
         reasons.append("N/A profile %r is not a recognized project profile "
                        "%s" % (prof, sorted(RECOGNIZED_PROFILES)))
     else:
-        if profile is not None and prof != profile:
+        if profile is None:
+            reasons.append("N/A profile cannot be accepted without the "
+                           "committed project profile binding")
+        elif prof != profile:
             reasons.append("N/A profile %r != the project's profile %r"
                            % (prof, profile))
         if cat not in MANDATORY and prof not in NA_ALLOWED.get(cat, ()):
@@ -169,9 +173,10 @@ def check_na_applicability(rec, profile):
         reasons.append("applicability.matrix must be %r (got %r)"
                        % (want_matrix, app.get("matrix")))
     ps = app.get("profile_source")
-    if not (isinstance(ps, str) and ps.strip()):
-        reasons.append("applicability.profile_source must name where the "
-                       "project profile is recorded")
+    if ps != gp.PROJECT_PROFILE_SOURCE:
+        reasons.append("applicability.profile_source must be the canonical "
+                       "committed source %r (got %r)" %
+                       (gp.PROJECT_PROFILE_SOURCE, ps))
     checked = app.get("checked")
     if not (isinstance(checked, list) and checked
             and all(isinstance(x, str) and x.strip() for x in checked)):
@@ -300,7 +305,14 @@ def collect(paths):
     return files
 
 
-def main(argv=None):
+def bounded_max_age(value):
+    days = int(value)
+    if not 1 <= days <= 7:
+        raise argparse.ArgumentTypeError("must be between 1 and 7 days")
+    return days
+
+
+def main(argv=None, _test_now=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("paths", nargs="+",
                     help="evidence JSON files or directories of them")
@@ -310,15 +322,17 @@ def main(argv=None):
                          "cleanliness are all derived here")
     ap.add_argument("--environment", required=True)
     ap.add_argument("--project", required=True)
-    ap.add_argument("--profile", default=None,
-                    choices=sorted(RECOGNIZED_PROFILES))
+    ap.add_argument("--profile", required=True,
+                    choices=sorted(RECOGNIZED_PROFILES),
+                    help="required cross-check against the canonical "
+                         "Project profile: field committed in "
+                         ".solo/project.md at HEAD")
     ap.add_argument("--commit", default=None,
                     help="OPTIONAL cross-check: must EXACTLY equal the "
                          "HEAD the checker derives itself (usage error "
                          "otherwise). Never a source of truth.")
-    ap.add_argument("--max-age-days", type=int, default=7)
-    ap.add_argument("--now", default=None,
-                    help="ISO-8601 override for tests (default: utcnow)")
+    ap.add_argument("--max-age-days", type=bounded_max_age, default=7,
+                    help="freshness window (1-7 days; cannot loosen policy)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
@@ -335,10 +349,20 @@ def main(argv=None):
               "caller-provided commits are never trusted" %
               (args.commit, head))
         return 2
-    now = parse_ts(args.now) if args.now else \
-        datetime.datetime.now(datetime.timezone.utc)
-    if now is None:
-        print("--now is not ISO-8601")
+    committed_profile, profile_err = gp.committed_project_profile(args.root)
+    if profile_err:
+        print("committed project profile unavailable: %s" % profile_err)
+        return 2
+    if args.profile != committed_profile:
+        print("--profile %r does not match %r recorded in the committed %s "
+              "at HEAD" % (args.profile, committed_profile,
+                            gp.PROJECT_PROFILE_SOURCE))
+        return 2
+    now = (_test_now if _test_now is not None else
+           datetime.datetime.now(datetime.timezone.utc))
+    if (not isinstance(now, datetime.datetime) or now.tzinfo is None or
+            now.utcoffset() is None):
+        print("internal test clock must be a timezone-aware datetime")
         return 2
     try:
         schema = gp.load_schema()
@@ -353,7 +377,11 @@ def main(argv=None):
     # ---- unverifiable working states fail the gate outright ---------------
     problems = []
     tracked = gp.evidence_tracked_in_head(args.root)
-    if tracked:
+    if tracked is None:
+        problems.append("git runtime-state tracking check FAILED — an "
+                        "unverifiable tracking state fails the gate "
+                        "(fail closed, never treated as untracked)")
+    elif tracked:
         problems.append(".solo/gate-evidence or .solo/run-state files are "
                         "TRACKED in HEAD — unsupported state; the only "
                         "supported workflow keeps both generated runtime "
@@ -395,7 +423,7 @@ def main(argv=None):
             continue
         reasons = check_record(rec, head, args.environment, now,
                                args.max_age_days, project=args.project,
-                               root=args.root, profile=args.profile,
+                               root=args.root, profile=committed_profile,
                                expected_tree=expected_tree, schema=schema)
         cat = rec.get("category") if isinstance(rec, dict) else None
         entry = {"file": path, "category": cat,
@@ -429,14 +457,14 @@ def main(argv=None):
                         "N/A) — the gate must not pass" % cat)
     applicable = len(CATEGORIES) - len(na_cats)
 
-    ok = (not rejected and not missing and not tracked
+    ok = (not rejected and not missing and tracked is False
           and state is not None and not state["dirty"])
     if args.json:
         print(json.dumps({"checked": len(files), "rejected": rejected,
                           "derived_head": head,
                           "committed_tree_sha256": expected_tree,
                           "workspace_clean": bool(state) and not state["dirty"],
-                          "evidence_tracked_in_head": bool(tracked),
+                          "evidence_tracked_in_head": tracked,
                           "missing_categories": missing,
                           "verified_categories": verified_cats,
                           "na_categories": na_cats,

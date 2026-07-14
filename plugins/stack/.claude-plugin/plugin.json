@@ -2,8 +2,8 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "stack",
   "displayName": "solo-suite stack",
-  "version": "1.4.3",
-  "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names — never secrets) and states which it used; analytics/tag exports are treated as potentially sensitive local artifacts.",
+  "version": "1.4.4",
+  "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:connector-check, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names — never secrets) and states which it used; analytics/tag exports are treated as potentially sensitive local artifacts.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",
     "email": "ayakuminozomi@gmail.com"

@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "ai",
   "displayName": "solo-suite ai",
-  "version": "2.5.3",
+  "version": "2.5.4",
   "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from validated templates. Skills: ai-output-auditor, agent-room-templates (4 agentsrooms/*.json rooms — full-team-website, site-doctor-audit, production-release, bug-fix-loop — validated against schema/agentroom-v1.schema.json by scripts/validate_rooms.py: stage reachability, implicit-write accounting, memory-steward/proposal discipline, artifact locks, workspace ownership, gate evidence coverage, bounded loops). Ships 24 room-* agent definitions with supported tool allowlists and the shared UNTRUSTED_CONTENT_CONTRACT_V1; task data is source-labelled and cannot grant authority. The JSON templates are validated work orders, not an executable runtime. Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

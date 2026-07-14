@@ -5,8 +5,10 @@ status/tree_digest fail) lives here, plus the matrix, N/A, and completeness
 rules. All checks run against a real git fixture because the checker
 derives HEAD itself."""
 import datetime
+import contextlib
 import hashlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -14,6 +16,7 @@ import sys
 import tempfile
 import shutil
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GP = os.path.join(REPO, "plugins", "gate", "lib", "gate_policy.py")
@@ -42,7 +45,19 @@ try:
 except ImportError:
     jsonschema = None
 
-NOW = "2026-07-10T12:00:00Z"
+_BASE_NOW = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+
+
+def iso(value):
+    return value.isoformat().replace("+00:00", "Z")
+
+
+NOW = iso(_BASE_NOW)
+FRESH_TIMESTAMP = iso(_BASE_NOW - datetime.timedelta(days=1))
+FRESH_EXPIRES = iso(_BASE_NOW + datetime.timedelta(days=6))
+EXPIRED = iso(_BASE_NOW - datetime.timedelta(seconds=1))
+OLD_TIMESTAMP = iso(_BASE_NOW - datetime.timedelta(days=30))
+OLD_EXPIRES = iso(_BASE_NOW + datetime.timedelta(days=30))
 
 
 def git(cwd, *args):
@@ -73,6 +88,9 @@ class Fixture(unittest.TestCase):
             f.write("# Stack\nProd: https://x.example\n"
                     "version-endpoint: https://x.example/version\n"
                     "health-endpoint: https://x.example/health\n")
+        with open(os.path.join(self.root, ".solo", "project.md"), "w",
+                  encoding="utf-8") as f:
+            f.write("# Project\n\nProject profile: api-service\n")
         with open(os.path.join(self.root, "test_x.py"), "w",
                   encoding="utf-8") as f:
             f.write("import unittest\n")
@@ -117,7 +135,7 @@ class Fixture(unittest.TestCase):
             "commit": self.head,
             "tree_digest": self.tree,
             "environment": "production",
-            "timestamp": "2026-07-09T12:00:00Z",
+            "timestamp": FRESH_TIMESTAMP,
             "category": "security",
             "command": " ".join(argv),
             "command_argv": argv,
@@ -128,7 +146,7 @@ class Fixture(unittest.TestCase):
             "artifact": self.artifact_rel,
             "artifact_sha256": self.digest,
             "reviewer": "security-seat",
-            "expires": "2026-07-16T12:00:00Z",
+            "expires": FRESH_EXPIRES,
         }
         base.update(over)
         return base
@@ -141,7 +159,7 @@ class Fixture(unittest.TestCase):
             "project": "demo",
             "commit": self.head,
             "environment": "production",
-            "timestamp": "2026-07-09T12:00:00Z",
+            "timestamp": FRESH_TIMESTAMP,
             "category": category,
             "profile": profile,
             "reason": "API service exposes no public pages; nothing to "
@@ -150,7 +168,7 @@ class Fixture(unittest.TestCase):
                               "profile_source": ".solo/project.md",
                               "checked": ["router exposes JSON only"]},
             "reviewer": "finalizer",
-            "expires": "2026-07-16T12:00:00Z",
+            "expires": FRESH_EXPIRES,
         }
         base.update(over)
         if "applicability" not in over:
@@ -169,10 +187,24 @@ class Fixture(unittest.TestCase):
         with open(os.path.join(self.ev, name), "w", encoding="utf-8") as f:
             json.dump(rec, f)
 
+    def commit_profile(self, profile):
+        """Bind a test case to a real committed canonical project profile."""
+        project = os.path.join(self.root, ".solo", "project.md")
+        with open(project, "w", encoding="utf-8", newline="\n") as stream:
+            stream.write("# Project\n\nProject profile: %s\n" % profile)
+        self.assertEqual(git(self.root, "add", ".solo/project.md").returncode,
+                         0)
+        changed = git(self.root, "diff", "--cached", "--quiet").returncode
+        if changed:
+            committed = git(self.root, "commit", "-qm", "profile " + profile)
+            self.assertEqual(committed.returncode, 0, committed.stderr)
+        self.head = git(self.root, "rev-parse", "HEAD").stdout.strip()
+        self.tree = gp.committed_tree_digest(self.root)
+
     def run_cli(self, *extra, **kw):
         argv = [sys.executable, CE, self.ev, "--root", self.root,
                 "--environment", "production", "--project", "demo",
-                "--now", NOW] + list(extra)
+                ] + list(extra)
         if kw.get("profile"):
             argv += ["--profile", kw["profile"]]
         return subprocess.run(argv, capture_output=True, text=True,
@@ -257,10 +289,10 @@ class RecordRules(Fixture):
         self.assertTrue(any("WRONG PROJECT" in x for x in self.reasons(
             self.record(project="other"))))
         self.assertTrue(any("expired" in x for x in self.reasons(
-            self.record(expires="2026-07-01T00:00:00Z"))))
+            self.record(expires=EXPIRED))))
         self.assertTrue(any("days old" in x for x in self.reasons(
-            self.record(timestamp="2026-06-01T00:00:00Z",
-                        expires="2027-01-01T00:00:00Z"))))
+            self.record(timestamp=OLD_TIMESTAMP,
+                        expires=OLD_EXPIRES))))
 
     def test_empty_reviewer_rejected(self):
         r = self.reasons(self.record(reviewer="  "))
@@ -376,6 +408,17 @@ class NaRules(Fixture):
         r = self.reasons(rec)
         self.assertTrue(any("SCHEMA" in x for x in r), r)
 
+    def test_profile_source_must_be_canonical_committed_path(self):
+        rec = self.na_record("seo")
+        rec["applicability"]["profile_source"] = "docs/profile.md"
+        r = self.reasons(rec, profile="api-service")
+        self.assertTrue(any("SCHEMA" in x or "canonical" in x
+                            for x in r), r)
+
+    def test_na_check_requires_derived_profile_binding(self):
+        r = self.reasons(self.na_record("seo"), profile=None)
+        self.assertTrue(any("profile binding" in x for x in r), r)
+
     def test_na_commit_must_equal_head(self):
         r = self.reasons(self.na_record("seo", commit="d" * 40))
         self.assertTrue(any("derived HEAD" in x for x in r), r)
@@ -447,6 +490,38 @@ class CliCompleteness(Fixture):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("10 verified + 4 N/A = 14/14", r.stdout)
 
+    def test_checker_cli_requires_profile_even_for_complete_set(self):
+        self.full_set()
+        r = self.run_cli()
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("--profile", r.stderr)
+
+    def test_checker_cli_rejects_caller_controlled_clock(self):
+        self.full_set()
+        r = self.run_cli("--now", NOW, profile="api-service")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("unrecognized arguments: --now", r.stderr)
+
+    def test_checker_cannot_loosen_freshness_beyond_seven_days(self):
+        self.full_set()
+        r = self.run_cli("--max-age-days", "8", profile="api-service")
+        self.assertEqual(r.returncode, 2, r.stdout + r.stderr)
+        self.assertIn("between 1 and 7", r.stderr)
+
+    def test_tracking_probe_failure_cannot_pass_as_untracked(self):
+        """None is the tracking probe's fail-closed sentinel, not False."""
+        self.full_set()
+        argv = [self.ev, "--root", self.root,
+                "--environment", "production", "--project", "demo",
+                "--profile", "api-service"]
+        out = io.StringIO()
+        with mock.patch.object(ce.gp, "evidence_tracked_in_head",
+                               return_value=None), \
+                contextlib.redirect_stdout(out):
+            rc = ce.main(argv, _test_now=self.now)
+        self.assertEqual(rc, 1, out.getvalue())
+        self.assertIn("tracking check FAILED", out.getvalue())
+
     def test_missing_category_fails(self):
         self.full_set()
         os.remove(os.path.join(self.ev, "testing.json"))
@@ -461,10 +536,12 @@ class CliCompleteness(Fixture):
         for prof in sorted(ce.RECOGNIZED_PROFILES):
             for name in os.listdir(self.ev):
                 os.remove(os.path.join(self.ev, name))
+            self.commit_profile(prof)
             for cat in sorted(ce.CATEGORIES):
                 self.write(cat + ".json", self.na_record(cat, profile=prof))
             r = self.run_cli(profile=prof)
-            self.assertEqual(r.returncode, 1, (prof, r.stdout))
+            self.assertEqual(r.returncode, 1,
+                             (prof, r.stdout, r.stderr))
 
     def test_D_commit_flag_must_equal_derived_head(self):
         self.full_set()

@@ -10,6 +10,13 @@ on:
 permissions:
   contents: read
 
+# The changed-files asset is version-dependent. Keep its trusted baseline in
+# the reviewed workflow and require it to match the released-tree inventory.
+# Signer and publisher jobs have no checkout, so they recreate their fixed
+# allowlists from this value instead of trusting artifact-provided names.
+env:
+  RELEASE_BASELINE_VERSION: "1.0.25"
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -334,6 +341,42 @@ jobs:
             echo "FATAL: tag does not resolve to the checked-out event commit"; exit 1;
           }
 
+      - name: Establish the fixed unsigned release allowlist
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$CURRENT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: current release version is not strict semver"; exit 1;
+          }
+          [[ "$RELEASE_BASELINE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: release baseline version is not strict semver"; exit 1;
+          }
+          INVENTORY_VERSION="$(python - <<'PY'
+          import json
+          with open('release/previous-release-inventory.json', encoding='utf-8') as fh:
+              print(json.load(fh)['release'])
+          PY
+          )"
+          test "$INVENTORY_VERSION" = "$RELEASE_BASELINE_VERSION" || {
+            echo "FATAL: reviewed release baseline does not match previous-release inventory"; exit 1;
+          }
+          cat > "$RUNNER_TEMP/expected-release-manifest-payloads.txt" <<EOF
+          SHA256SUMS
+          VALIDATION-REPORT.md
+          changed_files_v${RELEASE_BASELINE_VERSION}_to_v${CURRENT_VERSION}.txt
+          provenance.json
+          sbom.json
+          solo-suite-plugin-v${CURRENT_VERSION}.zip
+          validation-logs-v${CURRENT_VERSION}.zip
+          EOF
+          {
+            cat "$RUNNER_TEMP/expected-release-manifest-payloads.txt"
+            printf '%s\n' RELEASE-SHA256SUMS
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-unsigned-release-assets.txt"
+          test "$(wc -l < "$RUNNER_TEMP/expected-release-manifest-payloads.txt")" = "7"
+          test "$(wc -l < "$RUNNER_TEMP/expected-unsigned-release-assets.txt")" = "8"
+
       - name: Install locked tools and build while the tagged checkout is pristine
         shell: bash
         run: |
@@ -420,6 +463,9 @@ jobs:
           print(previous_name)
           PY
           )"
+          test "$PREVIOUS_VERSION" = "$RELEASE_BASELINE_VERSION" || {
+            echo "FATAL: changed-file baseline differs from the reviewed allowlist"; exit 1;
+          }
           PREVIOUS_TAG="v${PREVIOUS_VERSION}"
           git fetch --no-tags --force origin \
             "refs/tags/${PREVIOUS_TAG}:refs/tags/${PREVIOUS_TAG}"
@@ -514,23 +560,61 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          assert_exact_regular_files() {
+            local root="$1" expected="$2" label="$3"
+            local actual="$RUNNER_TEMP/actual-${label}-assets.txt"
+            if find "$root" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+              echo "FATAL: $label contains a non-regular or nested release entry"; exit 1
+            fi
+            find "$root" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort > "$actual"
+            if ! cmp --silent "$expected" "$actual"; then
+              echo "FATAL: $label asset set differs from the fixed allowlist"
+              diff -u "$expected" "$actual" || true
+              exit 1
+            fi
+          }
+          assert_exact_regular_files \
+            dist "$RUNNER_TEMP/expected-release-manifest-payloads.txt" \
+            canonical-build-payloads
           rm -f dist/RELEASE-SHA256SUMS
-          while IFS= read -r -d '' file; do
-            rel="${file#dist/}"
-            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$rel"
-          done < <(find dist -type f ! -name 'RELEASE-SHA256SUMS' ! -name '*.sigstore.json' -print0 | sort -z) \
+          while IFS= read -r rel; do
+            test -f "dist/$rel" || { echo "FATAL: checksum payload missing: $rel"; exit 1; }
+            printf '%s  %s\n' "$(sha256sum "dist/$rel" | cut -d' ' -f1)" "$rel"
+          done < "$RUNNER_TEMP/expected-release-manifest-payloads.txt" \
             > dist/RELEASE-SHA256SUMS
           test -s dist/RELEASE-SHA256SUMS
+          assert_exact_regular_files \
+            dist "$RUNNER_TEMP/expected-unsigned-release-assets.txt" \
+            canonical-unsigned-release
+          sed -E -n 's/^[0-9a-f]{64}  ([A-Za-z0-9._-]+)$/\1/p' \
+            dist/RELEASE-SHA256SUMS | LC_ALL=C sort \
+            > "$RUNNER_TEMP/actual-release-manifest-payloads.txt"
+          test "$(wc -l < dist/RELEASE-SHA256SUMS)" = "7" || {
+            echo "FATAL: release checksum manifest is malformed"; exit 1;
+          }
+          cmp --silent "$RUNNER_TEMP/expected-release-manifest-payloads.txt" \
+            "$RUNNER_TEMP/actual-release-manifest-payloads.txt" || {
+            echo "FATAL: release checksum manifest differs from the fixed payload allowlist"; exit 1;
+          }
           (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
 
       - name: Verify the unsigned artifact boundary before transfer
         shell: bash
         run: |
           set -euo pipefail
-          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -gt 6 || {
-            echo "FATAL: unsigned canonical release payload is incomplete"; exit 1;
+          ACTUAL="$RUNNER_TEMP/actual-unsigned-transfer-assets.txt"
+          if find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+            echo "FATAL: unsigned transfer contains a non-regular or nested entry"; exit 1
+          fi
+          find dist -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+            LC_ALL=C sort > "$ACTUAL"
+          cmp --silent "$RUNNER_TEMP/expected-unsigned-release-assets.txt" "$ACTUAL" || {
+            echo "FATAL: unsigned transfer differs from the fixed eight-asset allowlist"
+            diff -u "$RUNNER_TEMP/expected-unsigned-release-assets.txt" "$ACTUAL" || true
+            exit 1
           }
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
 
       - name: Transfer the checksummed unsigned bundle to the isolated signer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -553,6 +637,43 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Establish the fixed signer allowlists
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: signer received a non-release tag"; exit 1;
+          }
+          [[ "$RELEASE_BASELINE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: signer baseline is not strict semver"; exit 1;
+          }
+          cat > "$RUNNER_TEMP/expected-release-manifest-payloads.txt" <<EOF
+          SHA256SUMS
+          VALIDATION-REPORT.md
+          changed_files_v${RELEASE_BASELINE_VERSION}_to_v${CURRENT_VERSION}.txt
+          provenance.json
+          sbom.json
+          solo-suite-plugin-v${CURRENT_VERSION}.zip
+          validation-logs-v${CURRENT_VERSION}.zip
+          EOF
+          {
+            cat "$RUNNER_TEMP/expected-release-manifest-payloads.txt"
+            printf '%s\n' RELEASE-SHA256SUMS
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-unsigned-release-assets.txt"
+          while IFS= read -r rel; do
+            printf '%s\n%s.sigstore.json\n' "$rel" "$rel"
+          done < "$RUNNER_TEMP/expected-unsigned-release-assets.txt" |
+            LC_ALL=C sort > "$RUNNER_TEMP/expected-signed-inner-assets.txt"
+          {
+            cat "$RUNNER_TEMP/expected-signed-inner-assets.txt"
+            printf '%s\n' SIGNED-BUNDLE-SHA256SUMS SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-final-release-assets.txt"
+          test "$(wc -l < "$RUNNER_TEMP/expected-release-manifest-payloads.txt")" = "7"
+          test "$(wc -l < "$RUNNER_TEMP/expected-unsigned-release-assets.txt")" = "8"
+          test "$(wc -l < "$RUNNER_TEMP/expected-signed-inner-assets.txt")" = "16"
+          test "$(wc -l < "$RUNNER_TEMP/expected-final-release-assets.txt")" = "18"
+
       - name: Download the exact unsigned build artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -564,49 +685,97 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
-          test "$(find dist -maxdepth 1 -type f | wc -l)" -gt 6 || {
-            echo "FATAL: downloaded unsigned release payload is incomplete"; exit 1;
+          ACTUAL="$RUNNER_TEMP/actual-signer-input-assets.txt"
+          if find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+            echo "FATAL: signer input contains a non-regular or nested entry"; exit 1
+          fi
+          find dist -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+            LC_ALL=C sort > "$ACTUAL"
+          cmp --silent "$RUNNER_TEMP/expected-unsigned-release-assets.txt" "$ACTUAL" || {
+            echo "FATAL: signer input differs from the fixed eight-asset allowlist"
+            diff -u "$RUNNER_TEMP/expected-unsigned-release-assets.txt" "$ACTUAL" || true
+            exit 1
           }
+          sed -E -n 's/^[0-9a-f]{64}  ([A-Za-z0-9._-]+)$/\1/p' \
+            dist/RELEASE-SHA256SUMS | LC_ALL=C sort \
+            > "$RUNNER_TEMP/actual-signer-release-manifest-payloads.txt"
+          test "$(wc -l < dist/RELEASE-SHA256SUMS)" = "7" || {
+            echo "FATAL: signer received a malformed release checksum manifest"; exit 1;
+          }
+          cmp --silent "$RUNNER_TEMP/expected-release-manifest-payloads.txt" \
+            "$RUNNER_TEMP/actual-signer-release-manifest-payloads.txt" || {
+            echo "FATAL: signer release manifest differs from the fixed payload allowlist"; exit 1;
+          }
+          (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
 
       - name: Keyless-sign every canonical payload and its complete manifest
         shell: bash
         run: |
           set -euo pipefail
-          while IFS= read -r -d '' file; do
-            cosign sign-blob --yes "$file" --bundle "$file.sigstore.json"
-          done < <(find dist -type f ! -name '*.sigstore.json' -print0 | sort -z)
+          while IFS= read -r rel; do
+            cosign sign-blob --yes "dist/$rel" --bundle "dist/$rel.sigstore.json"
+          done < "$RUNNER_TEMP/expected-unsigned-release-assets.txt"
 
       - name: Verify every signature fail-closed against this exact tag workflow identity
         shell: bash
         run: |
           set -euo pipefail
-          count=0
-          while IFS= read -r -d '' file; do
+          ACTUAL="$RUNNER_TEMP/actual-signed-inner-assets.txt"
+          if find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+            echo "FATAL: signed payload contains a non-regular or nested entry"; exit 1
+          fi
+          find dist -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+            LC_ALL=C sort > "$ACTUAL"
+          cmp --silent "$RUNNER_TEMP/expected-signed-inner-assets.txt" "$ACTUAL" || {
+            echo "FATAL: signer output differs from the fixed sixteen-file inner bundle"
+            diff -u "$RUNNER_TEMP/expected-signed-inner-assets.txt" "$ACTUAL" || true
+            exit 1
+          }
+          while IFS= read -r rel; do
+            file="dist/$rel"
             bundle="$file.sigstore.json"
             test -f "$bundle" || { echo "FATAL: signature bundle missing for $file"; exit 1; }
             cosign verify-blob "$file" --bundle "$bundle" \
               --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com
-            count=$((count+1))
-          done < <(find dist -type f ! -name '*.sigstore.json' -print0 | sort -z)
-          test "$count" -gt 6 || { echo "FATAL: canonical release payload is incomplete"; exit 1; }
-          echo "signed and verified $count canonical payload files"
+          done < "$RUNNER_TEMP/expected-unsigned-release-assets.txt"
+          echo "signed and verified the fixed eight canonical payload files"
 
       - name: Create and sign the complete signed-bundle boundary manifest
         shell: bash
         run: |
           set -euo pipefail
           rm -f dist/SIGNED-BUNDLE-SHA256SUMS dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json
-          while IFS= read -r -d '' file; do
-            rel="${file#dist/}"
-            printf '%s  %s\n' "$(sha256sum "$file" | cut -d' ' -f1)" "$rel"
-          done < <(find dist -maxdepth 1 -type f ! -name 'SIGNED-BUNDLE-SHA256SUMS*' -print0 | sort -z) \
+          while IFS= read -r rel; do
+            test -f "dist/$rel" || { echo "FATAL: signed inner asset missing: $rel"; exit 1; }
+            printf '%s  %s\n' "$(sha256sum "dist/$rel" | cut -d' ' -f1)" "$rel"
+          done < "$RUNNER_TEMP/expected-signed-inner-assets.txt" \
             > dist/SIGNED-BUNDLE-SHA256SUMS
           test -s dist/SIGNED-BUNDLE-SHA256SUMS
+          sed -E -n 's/^[0-9a-f]{64}  ([A-Za-z0-9._-]+)$/\1/p' \
+            dist/SIGNED-BUNDLE-SHA256SUMS | LC_ALL=C sort \
+            > "$RUNNER_TEMP/actual-signer-outer-manifest-assets.txt"
+          test "$(wc -l < dist/SIGNED-BUNDLE-SHA256SUMS)" = "16" || {
+            echo "FATAL: signed-bundle checksum manifest is malformed"; exit 1;
+          }
+          cmp --silent "$RUNNER_TEMP/expected-signed-inner-assets.txt" \
+            "$RUNNER_TEMP/actual-signer-outer-manifest-assets.txt" || {
+            echo "FATAL: signed-bundle manifest differs from the fixed inner allowlist"; exit 1;
+          }
           (cd dist && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
           cosign sign-blob --yes dist/SIGNED-BUNDLE-SHA256SUMS \
             --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+          ACTUAL="$RUNNER_TEMP/actual-signer-final-assets.txt"
+          if find dist -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+            echo "FATAL: final signed bundle contains a non-regular or nested entry"; exit 1
+          fi
+          find dist -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+            LC_ALL=C sort > "$ACTUAL"
+          cmp --silent "$RUNNER_TEMP/expected-final-release-assets.txt" "$ACTUAL" || {
+            echo "FATAL: signer output differs from the fixed eighteen-asset allowlist"
+            diff -u "$RUNNER_TEMP/expected-final-release-assets.txt" "$ACTUAL" || true
+            exit 1
+          }
           cosign verify-blob dist/SIGNED-BUNDLE-SHA256SUMS \
             --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json \
             --certificate-identity "https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}" \
@@ -626,7 +795,7 @@ jobs:
     needs: release-sign
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     environment:
       name: release-publishing
     permissions:
@@ -637,6 +806,145 @@ jobs:
     env:
       GH_REPO: ${{ github.repository }}
     steps:
+      - name: Establish the fixed publisher allowlists
+        shell: bash
+        run: |
+          set -euo pipefail
+          CURRENT_VERSION="${GITHUB_REF_NAME#v}"
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: publisher received a non-release tag"; exit 1;
+          }
+          [[ "$RELEASE_BASELINE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "FATAL: publisher baseline is not strict semver"; exit 1;
+          }
+          cat > "$RUNNER_TEMP/expected-release-manifest-payloads.txt" <<EOF
+          SHA256SUMS
+          VALIDATION-REPORT.md
+          changed_files_v${RELEASE_BASELINE_VERSION}_to_v${CURRENT_VERSION}.txt
+          provenance.json
+          sbom.json
+          solo-suite-plugin-v${CURRENT_VERSION}.zip
+          validation-logs-v${CURRENT_VERSION}.zip
+          EOF
+          {
+            cat "$RUNNER_TEMP/expected-release-manifest-payloads.txt"
+            printf '%s\n' RELEASE-SHA256SUMS
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-unsigned-release-assets.txt"
+          while IFS= read -r rel; do
+            printf '%s\n%s.sigstore.json\n' "$rel" "$rel"
+          done < "$RUNNER_TEMP/expected-unsigned-release-assets.txt" |
+            LC_ALL=C sort > "$RUNNER_TEMP/expected-signed-inner-assets.txt"
+          {
+            cat "$RUNNER_TEMP/expected-signed-inner-assets.txt"
+            printf '%s\n' SIGNED-BUNDLE-SHA256SUMS SIGNED-BUNDLE-SHA256SUMS.sigstore.json
+          } | LC_ALL=C sort > "$RUNNER_TEMP/expected-final-release-assets.txt"
+          test "$(wc -l < "$RUNNER_TEMP/expected-release-manifest-payloads.txt")" = "7"
+          test "$(wc -l < "$RUNNER_TEMP/expected-unsigned-release-assets.txt")" = "8"
+          test "$(wc -l < "$RUNNER_TEMP/expected-signed-inner-assets.txt")" = "16"
+          test "$(wc -l < "$RUNNER_TEMP/expected-final-release-assets.txt")" = "18"
+
+      - name: Require immutable releases and protected release tags
+        shell: bash
+        env:
+          # Fine-grained PAT scoped to this repository and protected by the
+          # release-publishing environment. GitHub requires Administration:write
+          # to disclose ruleset bypass_actors; this no-checkout step issues GETs
+          # only and the token is not exposed to the publishing step.
+          GH_TOKEN: ${{ secrets.RELEASE_SETTINGS_AUDIT_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN:-}" || {
+            echo "FATAL: RELEASE_SETTINGS_AUDIT_TOKEN is not configured"; exit 1;
+          }
+          SETTINGS="$RUNNER_TEMP/immutable-release-settings.json"
+          gh api --method GET "repos/$GH_REPO/immutable-releases" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' > "$SETTINGS"
+          RULESET_INDEX="$RUNNER_TEMP/release-tag-ruleset-index.json"
+          RULESET_IDS="$RUNNER_TEMP/release-tag-ruleset-ids.txt"
+          RULESET_DETAILS="$RUNNER_TEMP/release-tag-rulesets"
+          gh api --method GET \
+            "repos/$GH_REPO/rulesets?includes_parents=true&targets=tag&per_page=100" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2026-03-10' > "$RULESET_INDEX"
+          python - "$RULESET_INDEX" > "$RULESET_IDS" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              rulesets = json.load(stream)
+          if not isinstance(rulesets, list):
+              raise SystemExit("FATAL: repository ruleset index is malformed")
+          for ruleset in rulesets:
+              identifier = ruleset.get("id") if isinstance(ruleset, dict) else None
+              if not isinstance(identifier, int) or isinstance(identifier, bool):
+                  raise SystemExit("FATAL: repository ruleset id is malformed")
+              print(identifier)
+          PY
+          mkdir -p "$RULESET_DETAILS"
+          while IFS= read -r ruleset_id; do
+            ruleset_id="${ruleset_id%$'\r'}"
+            gh api --method GET "repos/$GH_REPO/rulesets/$ruleset_id" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2026-03-10' \
+              > "$RULESET_DETAILS/$ruleset_id.json"
+          done < "$RULESET_IDS"
+          python - "$SETTINGS" "$RULESET_DETAILS" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              settings = json.load(stream)
+          if settings.get("enabled") is not True:
+              raise SystemExit(
+                  "FATAL: GitHub Immutable Releases are not enabled")
+          if not isinstance(settings.get("enforced_by_owner"), bool):
+              raise SystemExit(
+                  "FATAL: immutable-release settings response is malformed")
+          print("GitHub Immutable Releases preflight: enabled")
+
+          import os
+          rulesets = []
+          for name in sorted(os.listdir(sys.argv[2])):
+              if not name.endswith(".json"):
+                  raise SystemExit("FATAL: unexpected repository ruleset detail file")
+              with open(os.path.join(sys.argv[2], name), encoding="utf-8") as stream:
+                  rulesets.append(json.load(stream))
+          required_rules = {"update", "deletion"}
+          accepted_includes = {"refs/tags/v*", "~ALL"}
+          protected = []
+          for ruleset in rulesets:
+              if not isinstance(ruleset, dict):
+                  raise SystemExit("FATAL: repository ruleset detail is malformed")
+              if (ruleset.get("target") != "tag" or
+                      ruleset.get("enforcement") != "active"):
+                  continue
+              conditions = ruleset.get("conditions")
+              ref_names = conditions.get("ref_name") if isinstance(
+                  conditions, dict) else None
+              includes = ref_names.get("include") if isinstance(
+                  ref_names, dict) else None
+              excludes = ref_names.get("exclude") if isinstance(
+                  ref_names, dict) else None
+              if (not isinstance(includes, list) or
+                      not accepted_includes.intersection(includes) or
+                      excludes != []):
+                  continue
+              rules = ruleset.get("rules")
+              if not isinstance(rules, list):
+                  continue
+              rule_types = {
+                  rule.get("type") for rule in rules if isinstance(rule, dict)
+              }
+              if not required_rules.issubset(rule_types):
+                  continue
+              if (ruleset.get("bypass_actors") != [] or
+                      ruleset.get("current_user_can_bypass") != "never"):
+                  continue
+              protected.append(ruleset.get("name"))
+          if not protected:
+              raise SystemExit(
+                  "FATAL: no active, no-bypass tag ruleset protects refs/tags/v* "
+                  "against update and deletion")
+          print("Release-tag immutability preflight:", ", ".join(protected))
+          PY
+
       - name: Download the exact signed release artifact
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
@@ -648,23 +956,90 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          assert_exact_regular_files() {
+            local root="$1" expected="$2" label="$3"
+            local actual="$RUNNER_TEMP/actual-${label}-assets.txt"
+            if find "$root" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+              echo "FATAL: $label contains a non-regular or nested release entry"; exit 1
+            fi
+            find "$root" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort > "$actual"
+            if ! cmp --silent "$expected" "$actual"; then
+              echo "FATAL: $label asset set differs from the fixed allowlist"
+              diff -u "$expected" "$actual" || true
+              exit 1
+            fi
+          }
+          assert_manifest_names() {
+            local manifest="$1" expected="$2" label="$3"
+            local actual="$RUNNER_TEMP/actual-${label}-manifest-names.txt"
+            python - "$manifest" "$actual" <<'PY'
+          import re, sys
+          pattern = re.compile(rb"[0-9a-f]{64}  ([A-Za-z0-9._-]+)")
+          names = []
+          with open(sys.argv[1], "rb") as stream:
+              for line in stream.read().splitlines():
+                  match = pattern.fullmatch(line)
+                  if match is None:
+                      raise SystemExit("FATAL: malformed checksum manifest entry")
+                  names.append(match.group(1).decode("ascii"))
+          if len(names) != len(set(names)):
+              raise SystemExit("FATAL: duplicate checksum manifest entry")
+          with open(sys.argv[2], "w", encoding="ascii", newline="\n") as stream:
+              for name in sorted(names):
+                  stream.write(name + "\n")
+          PY
+            cmp --silent "$expected" "$actual" || {
+              echo "FATAL: $label checksum manifest differs from the fixed allowlist"
+              diff -u "$expected" "$actual" || true
+              exit 1
+            }
+          }
+          assert_exact_regular_files \
+            dist "$RUNNER_TEMP/expected-final-release-assets.txt" publisher-input
           IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
+          # Authenticate the outer manifest before trusting any checksum it
+          # supplies. It covers the exact sixteen inner files and deliberately
+          # excludes itself and its own signature to avoid a checksum cycle.
           cosign verify-blob dist/SIGNED-BUNDLE-SHA256SUMS \
             --bundle dist/SIGNED-BUNDLE-SHA256SUMS.sigstore.json \
             --certificate-identity "$IDENTITY" \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          assert_manifest_names dist/SIGNED-BUNDLE-SHA256SUMS \
+            "$RUNNER_TEMP/expected-signed-inner-assets.txt" publisher-outer
           (cd dist && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
+          cosign verify-blob dist/RELEASE-SHA256SUMS \
+            --bundle dist/RELEASE-SHA256SUMS.sigstore.json \
+            --certificate-identity "$IDENTITY" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          assert_manifest_names dist/RELEASE-SHA256SUMS \
+            "$RUNNER_TEMP/expected-release-manifest-payloads.txt" publisher-release
           (cd dist && sha256sum --check --strict RELEASE-SHA256SUMS)
-          count=0
-          while IFS= read -r -d '' file; do
+          while IFS= read -r rel; do
+            file="dist/$rel"
             bundle="$file.sigstore.json"
             test -f "$bundle" || { echo "FATAL: signature bundle missing for $file"; exit 1; }
             cosign verify-blob "$file" --bundle "$bundle" \
               --certificate-identity "$IDENTITY" \
               --certificate-oidc-issuer https://token.actions.githubusercontent.com
-            count=$((count+1))
-          done < <(find dist -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
-          test "$count" -gt 7 || { echo "FATAL: signed release payload is incomplete"; exit 1; }
+          done < "$RUNNER_TEMP/expected-release-manifest-payloads.txt"
+          python - dist/provenance.json "$GITHUB_SHA" \
+            "${GITHUB_REF_NAME#v}" publisher-input <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              provenance = json.load(stream)
+          expected_commit, expected_version, label = sys.argv[2:]
+          if provenance.get("source_commit") != expected_commit:
+              raise SystemExit(
+                  "FATAL: %s signed provenance commit differs from event commit" % label)
+          if provenance.get("version") != expected_version:
+              raise SystemExit(
+                  "FATAL: %s signed provenance version differs from tag" % label)
+          if provenance.get("source_dirty") is not False:
+              raise SystemExit(
+                  "FATAL: %s signed provenance reports a dirty source" % label)
+          print("%s signed provenance binding verified" % label)
+          PY
 
       - name: Publish the verified bundle as durable GitHub Release assets
         shell: bash
@@ -675,17 +1050,183 @@ jobs:
           test "$GH_REPO" = "$GITHUB_REPOSITORY" || {
             echo "FATAL: explicit GitHub CLI repository context is inconsistent"; exit 1;
           }
+          EXPECTED="$RUNNER_TEMP/expected-final-release-assets.txt"
+          assert_exact_regular_files() {
+            local root="$1" expected="$2" label="$3"
+            local actual="$RUNNER_TEMP/actual-${label}-assets.txt"
+            if find "$root" -mindepth 1 -maxdepth 1 ! -type f -print -quit | grep -q .; then
+              echo "FATAL: $label contains a non-regular or nested release entry"; exit 1
+            fi
+            find "$root" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' |
+              LC_ALL=C sort > "$actual"
+            if ! cmp --silent "$expected" "$actual"; then
+              echo "FATAL: $label asset set differs from the fixed allowlist"
+              diff -u "$expected" "$actual" || true
+              exit 1
+            fi
+          }
+          assert_manifest_names() {
+            local manifest="$1" expected="$2" label="$3"
+            local actual="$RUNNER_TEMP/actual-${label}-manifest-names.txt"
+            python - "$manifest" "$actual" <<'PY'
+          import re, sys
+          pattern = re.compile(rb"[0-9a-f]{64}  ([A-Za-z0-9._-]+)")
+          names = []
+          with open(sys.argv[1], "rb") as stream:
+              for line in stream.read().splitlines():
+                  match = pattern.fullmatch(line)
+                  if match is None:
+                      raise SystemExit("FATAL: malformed checksum manifest entry")
+                  names.append(match.group(1).decode("ascii"))
+          if len(names) != len(set(names)):
+              raise SystemExit("FATAL: duplicate checksum manifest entry")
+          with open(sys.argv[2], "w", encoding="ascii", newline="\n") as stream:
+              for name in sorted(names):
+                  stream.write(name + "\n")
+          PY
+            cmp --silent "$expected" "$actual" || {
+              echo "FATAL: $label checksum manifest differs from the fixed allowlist"
+              diff -u "$expected" "$actual" || true
+              exit 1
+            }
+          }
+          verify_release_metadata() {
+            local json_path="$1" expected_draft="$2" expected_immutable="$3" label="$4"
+            python - "$EXPECTED" "$json_path" "$expected_draft" \
+              "$expected_immutable" "$GITHUB_REF_NAME" "$label" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              expected = [line.rstrip("\n") for line in stream if line.strip()]
+          with open(sys.argv[2], encoding="utf-8") as stream:
+              release = json.load(stream)
+          expected_draft = sys.argv[3] == "true"
+          expected_immutable = sys.argv[4] == "true"
+          label = sys.argv[6]
+          actual = sorted(asset["name"] for asset in release["assets"])
+          if release["isDraft"] is not expected_draft:
+              raise SystemExit("FATAL: %s draft state differs" % label)
+          if release["isImmutable"] is not expected_immutable:
+              raise SystemExit("FATAL: %s immutable state differs" % label)
+          if release["isPrerelease"] is not False:
+              raise SystemExit("FATAL: %s must not be a prerelease" % label)
+          if release["tagName"] != sys.argv[5]:
+              raise SystemExit("FATAL: %s tag differs" % label)
+          if actual != expected:
+              raise SystemExit("FATAL: %s asset set is incomplete or unexpected" % label)
+          if len(actual) != 18:
+              raise SystemExit("FATAL: %s must contain exactly eighteen assets" % label)
+          print("%s metadata verified: %d assets" % (label, len(actual)))
+          PY
+          }
+          verify_api_annotated_tag_peel() {
+            local label="$1"
+            local ref_json="$RUNNER_TEMP/${label}-tag-ref.json"
+            local tag_json="$RUNNER_TEMP/${label}-tag-object.json"
+            local tag_object_sha
+            gh api --method GET \
+              "repos/$GH_REPO/git/ref/tags/$GITHUB_REF_NAME" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2026-03-10' > "$ref_json"
+            tag_object_sha="$(python - "$ref_json" "$GITHUB_REF_NAME" <<'PY'
+          import json, re, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              ref = json.load(stream)
+          if ref.get("ref") != "refs/tags/" + sys.argv[2]:
+              raise SystemExit("FATAL: GitHub tag API returned the wrong ref")
+          target = ref.get("object")
+          if not isinstance(target, dict) or target.get("type") != "tag":
+              raise SystemExit("FATAL: release ref is not an annotated tag object")
+          sha = target.get("sha")
+          if not isinstance(sha, str) or re.fullmatch(
+                  r"[0-9a-f]{40}|[0-9a-f]{64}", sha) is None:
+              raise SystemExit("FATAL: annotated tag object SHA is malformed")
+          print(sha)
+          PY
+          )"
+            gh api --method GET "repos/$GH_REPO/git/tags/$tag_object_sha" \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2026-03-10' > "$tag_json"
+            python - "$tag_json" "$GITHUB_REF_NAME" "$tag_object_sha" \
+              "$GITHUB_SHA" "$label" <<'PY'
+          import json, re, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              tag = json.load(stream)
+          expected_name, object_sha, event_sha, label = sys.argv[2:]
+          if tag.get("tag") != expected_name or tag.get("sha") != object_sha:
+              raise SystemExit("FATAL: %s annotated tag object identity differs" % label)
+          target = tag.get("object")
+          if not isinstance(target, dict) or target.get("type") != "commit":
+              raise SystemExit("FATAL: %s annotated tag does not target a commit" % label)
+          peeled = target.get("sha")
+          if not isinstance(peeled, str) or re.fullmatch(
+                  r"[0-9a-f]{40}|[0-9a-f]{64}", peeled) is None:
+              raise SystemExit("FATAL: %s peeled tag target is malformed" % label)
+          if peeled != event_sha:
+              raise SystemExit(
+                  "FATAL: %s peeled tag target differs from the event commit" % label)
+          print("%s annotated tag API peel verified: %s" % (label, peeled))
+          PY
+          }
+          verify_provenance_binding() {
+            local root="$1" label="$2"
+            python - "$root/provenance.json" "$GITHUB_SHA" \
+              "${GITHUB_REF_NAME#v}" "$label" <<'PY'
+          import json, sys
+          with open(sys.argv[1], encoding="utf-8") as stream:
+              provenance = json.load(stream)
+          expected_commit, expected_version, label = sys.argv[2:]
+          if provenance.get("source_commit") != expected_commit:
+              raise SystemExit(
+                  "FATAL: %s signed provenance commit differs from event commit" % label)
+          if provenance.get("version") != expected_version:
+              raise SystemExit(
+                  "FATAL: %s signed provenance version differs from tag" % label)
+          if provenance.get("source_dirty") is not False:
+              raise SystemExit(
+                  "FATAL: %s signed provenance reports a dirty source" % label)
+          print("%s signed provenance binding verified" % label)
+          PY
+          }
+          verify_downloaded_bundle() {
+            local root="$1" label="$2"
+            local identity="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
+            assert_exact_regular_files "$root" "$EXPECTED" "$label"
+            while IFS= read -r name; do
+              cmp --silent "dist/$name" "$root/$name" || {
+                echo "FATAL: $label asset bytes differ: $name"; exit 1;
+              }
+            done < "$EXPECTED"
+            cosign verify-blob "$root/SIGNED-BUNDLE-SHA256SUMS" \
+              --bundle "$root/SIGNED-BUNDLE-SHA256SUMS.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            assert_manifest_names "$root/SIGNED-BUNDLE-SHA256SUMS" \
+              "$RUNNER_TEMP/expected-signed-inner-assets.txt" "$label-outer"
+            (cd "$root" && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
+            cosign verify-blob "$root/RELEASE-SHA256SUMS" \
+              --bundle "$root/RELEASE-SHA256SUMS.sigstore.json" \
+              --certificate-identity "$identity" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            assert_manifest_names "$root/RELEASE-SHA256SUMS" \
+              "$RUNNER_TEMP/expected-release-manifest-payloads.txt" "$label-release"
+            (cd "$root" && sha256sum --check --strict RELEASE-SHA256SUMS)
+            while IFS= read -r rel; do
+              cosign verify-blob "$root/$rel" --bundle "$root/$rel.sigstore.json" \
+                --certificate-identity "$identity" \
+                --certificate-oidc-issuer https://token.actions.githubusercontent.com
+            done < "$RUNNER_TEMP/expected-release-manifest-payloads.txt"
+            verify_provenance_binding "$root" "$label"
+          }
+          assert_exact_regular_files dist "$EXPECTED" publisher-upload
+          verify_provenance_binding dist publisher-upload
           if gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" >/dev/null 2>&1; then
             echo "FATAL: GitHub Release already exists; refusing to overwrite assets"
             exit 1
           fi
-          mapfile -d '' assets < <(find dist -type f -print0 | sort -z)
-          test "${#assets[@]}" -gt 12 || { echo "FATAL: signed release asset set is incomplete"; exit 1; }
-          EXPECTED="$RUNNER_TEMP/expected-release-assets.txt"
-          printf '%s\n' "${assets[@]##*/}" | LC_ALL=C sort > "$EXPECTED"
-          test "$(uniq -d "$EXPECTED" | wc -l)" = "0" || {
-            echo "FATAL: duplicate asset basenames would collide on GitHub Releases"; exit 1;
-          }
+          assets=()
+          while IFS= read -r rel; do assets+=("dist/$rel"); done < "$EXPECTED"
+          test "${#assets[@]}" = "18" || { echo "FATAL: fixed release allowlist is not eighteen assets"; exit 1; }
+          verify_api_annotated_tag_peel pre-create
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GH_REPO" \
             --verify-tag \
@@ -693,18 +1234,10 @@ jobs:
             --title "Solo Suite $GITHUB_REF_NAME" \
             --notes-file dist/VALIDATION-REPORT.md
           gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" \
-            --json isDraft,assets > "$RUNNER_TEMP/release.json"
-          python - "$EXPECTED" "$RUNNER_TEMP/release.json" <<'PY'
-          import json, sys
-          with open(sys.argv[1], encoding='utf-8') as fh:
-              expected = sorted(line.rstrip('\n') for line in fh if line.strip())
-          with open(sys.argv[2], encoding='utf-8') as fh:
-              release = json.load(fh)
-          actual = sorted(asset['name'] for asset in release['assets'])
-          assert release['isDraft'] is True, 'release must remain draft during verification'
-          assert actual == expected, 'remote draft asset set is incomplete or unexpected'
-          print('draft release asset set verified:', len(actual))
-          PY
+            --json isDraft,isImmutable,isPrerelease,tagName,assets \
+            > "$RUNNER_TEMP/draft-release.json"
+          verify_release_metadata \
+            "$RUNNER_TEMP/draft-release.json" true false remote-draft
 
           # Asset metadata is not sufficient: fetch every remote object into a
           # fresh directory, compare its bytes, then validate the downloaded
@@ -712,38 +1245,26 @@ jobs:
           REMOTE_DIR="$(mktemp -d "$RUNNER_TEMP/solo-suite-remote-release.XXXXXX")"
           gh release download "$GITHUB_REF_NAME" --repo "$GH_REPO" \
             --dir "$REMOTE_DIR" --pattern '*'
-          find "$REMOTE_DIR" -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort \
-            > "$RUNNER_TEMP/downloaded-release-assets.txt"
-          cmp --silent "$EXPECTED" "$RUNNER_TEMP/downloaded-release-assets.txt" || {
-            echo "FATAL: downloaded remote asset set differs from the signed local bundle"; exit 1;
-          }
-          while IFS= read -r -d '' local_file; do
-            name="$(basename "$local_file")"
-            remote_file="$REMOTE_DIR/$name"
-            test -f "$remote_file" || { echo "FATAL: remote asset missing: $name"; exit 1; }
-            cmp --silent "$local_file" "$remote_file" || {
-              echo "FATAL: remote asset bytes differ: $name"; exit 1;
-            }
-          done < <(find dist -maxdepth 1 -type f -print0 | sort -z)
+          verify_downloaded_bundle "$REMOTE_DIR" remote-draft-download
 
-          IDENTITY="https://github.com/${{ github.repository }}/.github/workflows/ci.yml@${{ github.ref }}"
-          cosign verify-blob "$REMOTE_DIR/SIGNED-BUNDLE-SHA256SUMS" \
-            --bundle "$REMOTE_DIR/SIGNED-BUNDLE-SHA256SUMS.sigstore.json" \
-            --certificate-identity "$IDENTITY" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com
-          (cd "$REMOTE_DIR" && sha256sum --check --strict SIGNED-BUNDLE-SHA256SUMS)
-          (cd "$REMOTE_DIR" && sha256sum --check --strict RELEASE-SHA256SUMS)
-          remote_count=0
-          while IFS= read -r -d '' remote_file; do
-            bundle="$remote_file.sigstore.json"
-            test -f "$bundle" || { echo "FATAL: remote signature bundle missing for $remote_file"; exit 1; }
-            cosign verify-blob "$remote_file" --bundle "$bundle" \
-              --certificate-identity "$IDENTITY" \
-              --certificate-oidc-issuer https://token.actions.githubusercontent.com
-            remote_count=$((remote_count+1))
-          done < <(find "$REMOTE_DIR" -maxdepth 1 -type f ! -name '*.sigstore.json' -print0 | sort -z)
-          test "$remote_count" -gt 7 || { echo "FATAL: downloaded signed payload is incomplete"; exit 1; }
-
+          verify_api_annotated_tag_peel pre-promotion
           gh release edit "$GITHUB_REF_NAME" --repo "$GH_REPO" --draft=false
-          test "$(gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" \
-            --json isDraft --jq .isDraft)" = "false"
+          gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" \
+            --json isDraft,isImmutable,isPrerelease,tagName,assets \
+            > "$RUNNER_TEMP/public-release.json"
+          verify_release_metadata \
+            "$RUNNER_TEMP/public-release.json" false true public-release
+
+          # Promotion is a distinct trust boundary. Re-download every public
+          # asset into a second fresh directory and repeat the full byte,
+          # checksum, exact-name, and Sigstore verification after promotion.
+          PUBLIC_DIR="$(mktemp -d "$RUNNER_TEMP/solo-suite-public-release.XXXXXX")"
+          gh release download "$GITHUB_REF_NAME" --repo "$GH_REPO" \
+            --dir "$PUBLIC_DIR" --pattern '*'
+          verify_downloaded_bundle "$PUBLIC_DIR" public-release-download
+          gh release view "$GITHUB_REF_NAME" --repo "$GH_REPO" \
+            --json isDraft,isImmutable,isPrerelease,tagName,assets \
+            > "$RUNNER_TEMP/final-public-release.json"
+          verify_release_metadata \
+            "$RUNNER_TEMP/final-public-release.json" false true final-public-release
+          verify_api_annotated_tag_peel post-public

@@ -34,9 +34,11 @@ python3 "${CLAUDE_PLUGIN_ROOT}/skills/production-readiness-reviewer/scripts/upda
     --root . --run-id "$RUN_ID" verify final
 ```
 
+4. Read `HEAD:.solo/project.md` and require exactly one standalone `Project profile: <recognized-slug>` line. The selected `--profile` must equal that committed value. Missing, malformed, ambiguous, symlink-backed, or working-tree-only profile data is a hard stop.
+
 **Then, for each of the 14 categories** (product, architecture, design, frontend, backend, database, security, testing, performance, seo, analytics, deployment, monitoring, documentation):
 
-- If the applicability matrix permits N/A for the project's profile AND the category genuinely does not apply, use the recorder's canonical N/A operation — never write N/A JSON by hand in the supported workflow. The tool derives the commit itself, validates the matrix cell, rejects the seven mandatory categories — product, architecture, security, testing, deployment, monitoring, documentation are NEVER N/A — and generates the timestamps. The required `recorder` field is a copyable self-attested format label, not cryptographic proof that the helper wrote the file:
+- If the applicability matrix permits N/A for the committed project profile AND the category genuinely does not apply, use the recorder's canonical N/A operation — never write N/A JSON by hand in the supported workflow. The tool derives the commit and canonical profile from Git objects, requires `--profile-source` to remain exactly `.solo/project.md`, rejects CLI/profile mismatches and the seven mandatory categories — product, architecture, security, testing, deployment, monitoring, documentation are NEVER N/A — and generates the timestamps. The required `recorder` field is a copyable self-attested format label, not cryptographic proof that the helper wrote the file:
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/production-readiness-reviewer/scripts/record_evidence.py" \

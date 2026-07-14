@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import unittest
+from unittest import mock
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INVENTORY = os.path.join(REPO, "release",
@@ -81,6 +82,17 @@ class ReleaseVersioning(unittest.TestCase):
             "plugins/site-doctor/skills/security-review/scripts/"
             "scan_secrets.py",
         ]
+        for rel in probes:
+            with open(os.path.join(REPO, *rel.split("/")), "rb") as stream:
+                self.assertNotIn(b"\r\n", stream.read(), rel)
+
+        # Public release archives intentionally contain no .git directory.
+        # Their committed text bytes and the shipped policy are still
+        # verifiable above; check Git's attribute resolution only when the
+        # test is running from an actual checkout.
+        if not os.path.isdir(os.path.join(REPO, ".git")):
+            return
+
         checked = subprocess.run(
             ["git", "-C", REPO, "check-attr", "text", "eol", "--"]
             + probes,
@@ -91,8 +103,6 @@ class ReleaseVersioning(unittest.TestCase):
         for rel in probes:
             self.assertIn("%s: text: auto" % rel, lines)
             self.assertIn("%s: eol: lf" % rel, lines)
-            with open(os.path.join(REPO, *rel.split("/")), "rb") as stream:
-                self.assertNotIn(b"\r\n", stream.read(), rel)
 
         binary = subprocess.run(
             ["git", "-C", REPO, "check-attr", "text", "diff", "--",
@@ -120,6 +130,15 @@ class ReleaseVersioning(unittest.TestCase):
                     % (name, self.prev["release"], prev_version,
                        ", ".join(changed[:10])))
         self.assertEqual(offenders, [], "\n".join(offenders))
+
+    def test_checkout_policy_is_runnable_without_git_metadata(self):
+        """The test suite shipped in the public ZIP must remain runnable."""
+        with mock.patch.object(os.path, "isdir", return_value=False), \
+                mock.patch.object(
+                    subprocess, "run",
+                    side_effect=AssertionError(
+                        "archive validation must not invoke Git")):
+            self.test_checkout_policy_keeps_inventory_bytes_cross_platform()
 
     def test_unchanged_plugins_keep_their_versions(self):
         """The inverse guard: an UNCHANGED plugin tree must not have been

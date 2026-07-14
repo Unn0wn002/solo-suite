@@ -6,7 +6,7 @@ param(
     [ValidatePattern('^[0-9a-fA-F]{40}$')]
     [string]$ApprovedCommitOid,
     [switch]$AllowLocalTestRemote,
-    [string]$TagName = "v1.0.25",
+    [string]$TagName = "v1.0.26",
     [string]$GitUserName = "Solo Suite release tagger",
     [string]$GitUserEmail = "solo-suite-release@users.noreply.github.com"
 )
@@ -16,11 +16,11 @@ $ErrorActionPreference = "Stop"
 . (Join-Path $PSScriptRoot "publish-common.ps1")
 
 $ApprovedCommitOid = $ApprovedCommitOid.ToLowerInvariant()
-if ($TagName -cne "v1.0.25") {
-    throw "This reviewed helper may create only v1.0.25."
+if ($TagName -cne "v1.0.26") {
+    throw "This reviewed helper may create only v1.0.26."
 }
 Assert-SafeRemoteUrl -RemoteUrl $RemoteUrl -AllowLocalPath:$AllowLocalTestRemote
-$reviewBranch = "release/v1.0.25"
+$reviewBranch = "release/v1.0.26"
 $reviewBranchOid = Get-LsRemoteOid -RemoteUrl $RemoteUrl -RefName "refs/heads/$reviewBranch" -AllowLocalPath:$AllowLocalTestRemote
 if ($reviewBranchOid -cne $ApprovedCommitOid) {
     throw "Remote review branch must exist and equal the exact approved commit OID."
