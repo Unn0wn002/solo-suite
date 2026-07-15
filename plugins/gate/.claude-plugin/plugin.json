@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "gate",
-  "version": "1.3.0",
-  "description": "Quality gates that actually block: GO/NO-GO checkpoints with explicit blocker lists before coding, merge, and deploy, plus a production-readiness review that scores 12 categories 0-10 (overall /100) and returns a launch status \u2014 BLOCKED / SAFE TO LAUNCH / LAUNCH WITH WARNINGS \u2014 where hard blockers force BLOCKED regardless of score. Skills: quality-gatekeeper, production-readiness-reviewer. Commands: /gate:before-code, /gate:before-merge, /gate:before-deploy, /gate:production-ready.",
+  "displayName": "solo-suite gate",
+  "version": "2.5.4",
+  "description": "Quality gates that actually block: GO/NO-GO checkpoints with explicit blocker lists before coding, merge, and deploy, plus a production-readiness review that scores 14 categories 0-10 (matrix-accepted N/A categories leave the denominator; normalized = round(total / (10 x applicable) x 100); product, architecture, security, testing, deployment, monitoring, documentation are mandatory and never N/A) and returns a launch status - BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH - where hard blockers force BLOCKED regardless of score. Every category verdict is backed by unsigned, self-attested gate-evidence-v1; its copyable recorder label is not proof of process origin. Evidence execution is manual-only with preview/confirmation, bounded capture, a scrubbed child environment, and explicit network approval; this is defence in depth, not an OS sandbox. Evidence is rejected when stale (wrong commit, wrong tree, wrong environment, or expired). Skills: quality-gatekeeper, production-readiness-reviewer. Commands: /gate:before-code, /gate:before-merge, /gate:before-deploy, /gate:finalize-evidence, /gate:production-ready, /gate:score-project.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "gate",
     "quality",

@@ -1,10 +1,16 @@
 {
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "security",
-  "version": "1.0.2",
-  "description": "Security plus: threat modeling, role/permission matrices, Supabase RLS testing, secret detection & rotation, and abuse-case analysis. Skill: authz-security-reviewer (pairs with site-doctor's security-review). Commands: /security:threat-model, /security:authz-matrix, /security:secrets-fix, /security:rls-test, /security:abuse-cases.",
+  "displayName": "solo-suite security",
+  "version": "1.1.2",
+  "description": "Security plus: threat modeling, role/permission matrices, static Supabase RLS review, manual-only test planning, redacted secret detection & rotation guidance, and abuse-case analysis. Live RLS validation never runs automatically and production writes are refused. Skill: authz-security-reviewer (pairs with site-doctor's security-review). Commands: /security:threat-model, /security:authz-matrix, /security:secrets-fix, /security:rls-test, /security:abuse-cases.",
   "author": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
   },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
   "keywords": [
     "security",
     "authorization",

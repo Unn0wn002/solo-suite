@@ -26,7 +26,29 @@ LINK_HTML = (b"<html><head><title>Link Page</title></head><body>"
 PAGE2_HTML = (b"<html><head><title>Page Two</title>"
               b"<meta name=\"description\" content=\"p2\"></head>"
               b"<body><h1>two</h1></body></html>")
+SEO_CLEAN_HTML = (b"<html><head><title>SEO Start</title>"
+                  b"<meta name=\"description\" content=\"seo fixture\">"
+                  b"<link rel=\"canonical\" href=\"/seo-clean\"></head>"
+                  b"<body><h1>seo</h1><a href=\"/page2\">two</a></body></html>")
+DOCS_HTML = (b"<html><head><title>Docs Start</title>"
+             b"<meta name=\"description\" content=\"docs fixture\"></head>"
+             b"<body><h1>docs</h1><a href=\"child\">child</a></body></html>")
+DOCS_CHILD_HTML = (b"<html><head><title>Docs Child</title>"
+                   b"<meta name=\"description\" content=\"child fixture\"></head>"
+                   b"<body><h1>child</h1></body></html>")
 BIG_SIZE = 3 * 1024 * 1024
+
+# Mutable endpoint-contract state for the v1.0.17 deployment/monitoring
+# binding tests: /version serves STATE["version_body"] (tests set it to a
+# string containing the repo's FINAL_SHA) and /health serves an explicit
+# JSON health contract. A generic page (e.g. /ok) deliberately satisfies
+# NEITHER binding.
+STATE = {"version_body": "no version deployed\n",
+         "health_body": '{"status": "ok"}'}
+
+
+def set_version(text):
+    STATE["version_body"] = text
 
 REDIRECTS = {
     "/redir-ok": "/ok",
@@ -55,24 +77,57 @@ class Handler(BaseHTTPRequestHandler):
             code, ctype, body = 200, "text/html; charset=utf-8", LINK_HTML
         elif path == "/page2":
             code, ctype, body = 200, "text/html; charset=utf-8", PAGE2_HTML
+        elif path == "/seo-clean":
+            code, ctype, body = 200, "text/html; charset=utf-8", SEO_CLEAN_HTML
+        elif path == "/docs/":
+            code, ctype, body = 200, "text/html; charset=utf-8", DOCS_HTML
+        elif path == "/docs/child":
+            code, ctype, body = 200, "text/html; charset=utf-8", DOCS_CHILD_HTML
+        elif path == "/terminal-redirect":
+            # A terminal 3xx with a clean-looking body and no Location must
+            # never be mistaken for audited 2xx content.
+            code, ctype, body = 302, "text/html; charset=utf-8", SEO_CLEAN_HTML
+        elif path == "/utf16":
+            code, ctype = 200, "text/html; charset=utf-16"
+            body = SEO_CLEAN_HTML.decode("utf-8").encode("utf-16")
+        elif path == "/empty":
+            code, ctype, body = 200, "text/html; charset=utf-8", b""
         elif path == "/big":
             code, ctype, body = 200, "text/html; charset=utf-8", b"a" * BIG_SIZE
+        elif path == "/version":
+            code, ctype = 200, "text/plain; charset=utf-8"
+            body = STATE["version_body"].encode("utf-8")
+        elif path == "/health":
+            code, ctype = 200, "application/json"
+            body = STATE["health_body"].encode("utf-8")
         elif path == "/dns-query":
             qs = parse_qs(urlparse(self.path).query)
             rrtype = (qs.get("type") or ["TXT"])[0].upper()
             name = (qs.get("name") or [""])[0]
-            if rrtype == "MX":
+            if name.endswith("missing.example"):
+                ans = []
+            elif rrtype == "MX":
                 ans = [{"data": "10 mail.example.com."}]
             elif rrtype == "TXT" and name.startswith("_dmarc."):
                 ans = [{"data": '"v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com"'}]
             elif rrtype == "TXT" and "._domainkey." in name:
                 ans = [{"data": '"v=DKIM1; k=rsa; p=MIGfMA0GCSq"'}]
+            elif rrtype == "TXT" and name == "_spf.example.com":
+                ans = [{"data": '"v=spf1 ip4:192.0.2.0/24 -all"'}]
             elif rrtype == "TXT":
                 ans = [{"data": '"v=spf1 include:_spf.example.com -all"'}]
             else:
                 ans = []
             code, ctype = 200, "application/dns-json"
-            body = json.dumps({"Answer": ans}).encode()
+            body = json.dumps({"Status": 0, "Answer": ans}).encode()
+        elif path == "/dns-truncated":
+            code, ctype = 200, "application/dns-json"
+            body = json.dumps({"Status": 0, "TC": True, "Answer": [
+                {"data": '"v=DMARC1; p=reject"'}]}).encode()
+        elif path == "/dns-nxdomain-answer":
+            code, ctype = 200, "application/dns-json"
+            body = json.dumps({"Status": 3, "Answer": [
+                {"data": '"v=spf1 -all"'}]}).encode()
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))

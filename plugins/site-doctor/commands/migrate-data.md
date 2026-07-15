@@ -1,6 +1,7 @@
 ---
 description: Plan or review a safe data migration (between DBs/engines, large imports, backfills) with validation and rollback
 argument-hint: [source and target details]
+disable-model-invocation: true
 ---
 Use the data-migration skill for: $ARGUMENTS
 
@@ -9,6 +10,8 @@ copy -> validate -> sync -> cutover -> keep-source sequence with a field mapping
 batch strategy, validation checks (counts + checksums + spot checks), and
 rollback at each stage. The source stays authoritative until the target is
 validated.
+
+SAFETY: manual-only (data migration). Require a verified, restore-tested backup and explicit user confirmation before any migration step; state the rollback plan first; dry-run/preview where the engine allows it.
 
 ## Output — evidence-based audit format
 Never just "good" or "bad" — every claim names its proof. If nothing was actually inspected for an area, say "not checked", don't guess. End with exactly:

@@ -1,0 +1,40 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "full-team",
+  "displayName": "solo-suite full-team",
+  "version": "1.0.2",
+  "description": "Meta-plugin: installs the complete solo-suite team in one step. Depends on all 17 component plugins (solo, stack, project, design, dev, test, release, docs, site-doctor, git, spec, repo, security, browser, gate, ai, growth) — each of which remains individually installable. Command: /full-team:verify checks that every component plugin is present and reports what is missing.",
+  "author": {
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com"
+  },
+  "license": "MIT",
+  "repository": "https://github.com/unn0wn002/solo-suite",
+  "homepage": "https://github.com/unn0wn002/solo-suite#readme",
+  "dependencies": [
+    "ai",
+    "browser",
+    "design",
+    "dev",
+    "docs",
+    "gate",
+    "git",
+    "growth",
+    "project",
+    "release",
+    "repo",
+    "security",
+    "site-doctor",
+    "solo",
+    "spec",
+    "stack",
+    "test"
+  ],
+  "keywords": [
+    "meta",
+    "full-team",
+    "install-all",
+    "solo",
+    "workflow"
+  ]
+}

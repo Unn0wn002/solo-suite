@@ -1,21 +1,19 @@
 {
   "name": "solo-suite",
   "owner": {
-    "name": "Ayaya"
+    "name": "Sakura Yukihira (Ayaya)",
+    "email": "ayakuminozomi@gmail.com",
+    "url": "https://github.com/unn0wn002/solo-suite"
   },
   "metadata": {
-    "description": "The complete solo developer system: a full product team, a production audit/debug/fix toolkit (site-doctor), a stack-aware layer, and a workflow layer (git, spec, repo intelligence, security, browser QA, quality gates, AI-agent orchestration, growth), unified by the standard 16-file .solo/ project memory that can sync out to Obsidian and Grafana. 17 plugins, 56 skills, 100 slash commands, 10 stdlib helper scripts covering intake -> spec -> plan -> design -> build -> review -> test -> browser-QA -> audit -> gate -> release -> operate -> document -> sync, with /solo:full-team-dev running the whole cycle, /solo:self-check verifying the suite, strict evidence-based gates with 0-100 launch scoring, and two-mode (connector/manual) vendor audits for Cloudflare, Vercel, Supabase, tags, and payments.",
-    "version": "1.0.10",
-    "plugins": 17,
-    "skills": 56,
-    "commands": 100,
-    "scripts": 10
+    "description": "The complete solo developer system: a full product team, a production audit/debug/fix toolkit (site-doctor), a stack-aware layer, and a workflow layer (git, spec, repo intelligence, security, browser QA, quality gates, AI-agent orchestration with AgentRooms schema + memory steward, growth), unified by the standard 16-file .solo/ project memory that can sync out to Obsidian and Grafana (tokens via environment variables only; external writes are dry-run first and manual-only). 18 plugins (17 components + the full-team meta-plugin), 56 skills, 102 slash commands, 13 stdlib helper scripts, 24 room-* agents covering intake -> spec -> plan -> design -> build -> review -> test -> browser-QA -> audit -> gate -> release -> operate -> document -> sync, with /solo:full-team-dev running the whole 17-role cycle, /solo:self-check verifying the suite, strict evidence-based gates (/gate:production-ready scores 14 categories with an N/A-aware denominator (normalized /100) and machine-readable, self-attested, stale-rejecting gate evidence; /gate:score-project for the trend metric), and two-mode (connector/manual) vendor audits for Cloudflare, Vercel, Supabase, tags, and payments that run only for providers recorded in .solo/stack.md.",
+    "version": "1.0.26"
   },
   "plugins": [
     {
       "name": "solo",
       "source": "./plugins/solo",
-      "description": "The heart of the solo workflow: persistent project memory across sessions, syncing it outward, self-checking the whole suite, and orchestrating the full team. Skills: project-memory-manager (owns the standard 16-file .solo/ contract), memory-sync (Obsidian + Grafana), suite-integrity (mechanical self-check with a stdlib script). Commands: /solo:start-session, /solo:end-session, /solo:run-cycle, /solo:full-team-dev (idea \u2192 production, gates enforced), /solo:handoff-memory, /solo:next-step, /solo:project-status, /solo:self-check, /solo:sync-obsidian, /solo:sync-grafana.",
+      "description": "The heart of the solo workflow: persistent project memory across sessions, syncing it outward, self-checking the whole suite, and orchestrating the full team. Skills: project-memory-manager (owns the standard 16-file .solo/ contract), memory-sync (Obsidian + Grafana; manual-only, dry-run first, tokens from environment variables only), suite-integrity (mechanical self-check with a stdlib script). /solo:full-team-dev uses local static security checks during automation and creates an explicit human handoff for live or side-effecting checks. Commands: /solo:start-session, /solo:end-session, /solo:run-cycle, /solo:full-team-dev (idea → production, gates enforced), /solo:handoff-memory, /solo:next-step, /solo:project-status, /solo:self-check, /solo:sync-obsidian, /solo:sync-grafana.",
       "category": "workflow",
       "tags": [
         "memory",
@@ -34,7 +32,7 @@
     {
       "name": "stack",
       "source": "./plugins/stack",
-      "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:connector-check, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names \u2014 never secrets) and states which it used.",
+      "description": "Stack-aware auditing for the tools solo devs actually use. Skills: stack-advisor, cloudflare-audit, vercel-audit, supabase-audit (leads with RLS), tag-audit, payments-audit, and connector-auditor (uses live Vercel/Supabase/GitHub/Cloudflare data when a connector is available). Commands: /stack:intake, /stack:connector-check, /stack:audit-cloudflare, /stack:audit-vercel, /stack:audit-supabase, /stack:audit-tags, /stack:audit-payments. Every audit runs in Connector mode (live config, read-only) or Manual mode (asks for screenshots, config files, env-var names — never secrets) and states which it used; analytics/tag exports are treated as potentially sensitive local artifacts.",
       "category": "development",
       "tags": [
         "stack",
@@ -132,7 +130,7 @@
     {
       "name": "site-doctor",
       "source": "./plugins/site-doctor",
-      "description": "Production toolkit: 26 audit/debug/fix skills for websites and databases - security (OWASP), SEO, performance, accessibility, API, observability, infrastructure, deployment, cost, backups, compliance, data migration, mobile, content, analytics, load testing, incident response, dependencies, email deliverability, forms. 24 commands, 8 stdlib scripts. Reads/writes .solo/ memory: audit fix-lists become tasks.",
+      "description": "Production toolkit: 26 audit/debug/fix skills for websites and databases - security (OWASP), SEO, performance, accessibility, API, observability, infrastructure, deployment, cost, backups, compliance, data migration, mobile, content, analytics, load testing, incident response, dependencies, email deliverability, forms. 24 commands, 8 stdlib scripts. Network helpers are SSRF-guarded and budget-bounded; secret findings are redacted; dynamic security and side-effecting checks are manual-only. Reads/writes .solo/ memory: audit fix-lists become tasks.",
       "category": "development",
       "tags": [
         "audit",
@@ -190,7 +188,7 @@
     {
       "name": "repo",
       "source": "./plugins/repo",
-      "description": "Repo intelligence: understand a codebase before editing it \u2014 structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
+      "description": "Repo intelligence: understand a codebase before editing it — structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
       "category": "analysis",
       "tags": [
         "repo",
@@ -208,7 +206,7 @@
     {
       "name": "security",
       "source": "./plugins/security",
-      "description": "Security plus: threat modeling, role/permission matrices, Supabase RLS testing, secret detection & rotation, and abuse-case analysis. Skill: authz-security-reviewer (pairs with site-doctor's security-review). Commands: /security:threat-model, /security:authz-matrix, /security:secrets-fix, /security:rls-test, /security:abuse-cases.",
+      "description": "Security plus: threat modeling, role/permission matrices, static Supabase RLS review, manual-only test planning, redacted secret detection & rotation guidance, and abuse-case analysis. Live RLS validation never runs automatically and production writes are refused. Skill: authz-security-reviewer (pairs with site-doctor's security-review). Commands: /security:threat-model, /security:authz-matrix, /security:secrets-fix, /security:rls-test, /security:abuse-cases.",
       "category": "security",
       "tags": [
         "security",
@@ -226,7 +224,7 @@
     {
       "name": "browser",
       "source": "./plugins/browser",
-      "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test.",
+      "description": "Real-browser QA: smoke-test core flows, catch console/network/hydration errors, review layout & responsiveness, test mobile breakpoints, and test forms end to end. Skill: browser-qa-engineer. Commands: /browser:smoke-test, /browser:console-errors, /browser:visual-check, /browser:mobile-test, /browser:form-submit-test. Safety contract: localhost/staging/test-tenant by default, synthetic data only, confirmation before production or side-effecting submissions; smoke-test and form-submit-test are manual-only.",
       "category": "testing",
       "tags": [
         "browser",
@@ -245,7 +243,7 @@
     {
       "name": "gate",
       "source": "./plugins/gate",
-      "description": "Quality gates that actually block: GO/NO-GO checkpoints with explicit blocker lists before coding, merge, and deploy, plus a production-readiness review that scores 12 categories 0-10 (overall /100) and returns a launch status \u2014 BLOCKED / SAFE TO LAUNCH / LAUNCH WITH WARNINGS \u2014 where hard blockers force BLOCKED regardless of score. Skills: quality-gatekeeper, production-readiness-reviewer. Commands: /gate:before-code, /gate:before-merge, /gate:before-deploy, /gate:production-ready, /gate:score-project.",
+      "description": "Quality gates that actually block: GO/NO-GO checkpoints with explicit blocker lists before coding, merge, and deploy, plus a production-readiness review that scores 14 categories 0-10 (matrix-accepted N/A categories leave the denominator; normalized /100; the seven mandatory categories are never N/A) and returns a launch status - BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH - where hard blockers force BLOCKED regardless of score, vendor checks run only for providers in .solo/stack.md, and every category verdict is backed by unsigned, self-attested machine-readable gate evidence (gate-evidence-v1). Its copyable recorder label is not proof of process origin. Evidence execution is manual-only with preview/confirmation, bounded capture, a scrubbed child environment, and explicit network approval; this is defence in depth, not an OS sandbox. Evidence is rejected when stale (wrong commit, wrong tree, wrong environment, or expired). Skills: quality-gatekeeper, production-readiness-reviewer. Commands: /gate:before-code, /gate:before-merge, /gate:before-deploy, /gate:finalize-evidence, /gate:production-ready, /gate:score-project.",
       "category": "quality",
       "tags": [
         "gate",
@@ -263,7 +261,7 @@
     {
       "name": "ai",
       "source": "./plugins/ai",
-      "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from templates. Skills: ai-output-auditor, agent-room-templates (ships 4 ready-made agentsrooms (validated by scripts/validate_rooms.py)/*.json room files: full-team-website, site-doctor-audit, production-release, bug-fix-loop). Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
+      "description": "AI coding workflow: sharpen prompts, check agent handoffs, review AI-generated code for hallucinations and missing files, route tasks to the right model, repair failed output, and set up multi-agent rooms from validated templates. Skills: ai-output-auditor, agent-room-templates (4 agentsrooms/*.json rooms — full-team-website, site-doctor-audit, production-release, bug-fix-loop — validated against schema/agentroom-v1.schema.json by scripts/validate_rooms.py: stage reachability, implicit-write accounting, memory-steward/proposal discipline, artifact locks, workspace ownership, gate evidence coverage, bounded loops). Ships 24 room-* agent definitions with supported tool allowlists and the shared UNTRUSTED_CONTENT_CONTRACT_V1; task data is source-labelled and cannot grant authority. The JSON templates are validated work orders, not an executable runtime. Commands: /ai:prompt-improve, /ai:handoff-check, /ai:review-output, /ai:compare-models, /ai:repair-cycle, /ai:agent-rooms.",
       "category": "ai",
       "tags": [
         "ai",
@@ -295,6 +293,20 @@
         "forms",
         "solo"
       ]
+    },
+    {
+      "name": "full-team",
+      "source": "./plugins/full-team",
+      "description": "Meta-plugin: installs the complete solo-suite team in one step. Depends on all 17 component plugins (solo, stack, project, design, dev, test, release, docs, site-doctor, git, spec, repo, security, browser, gate, ai, growth) — each of which remains individually installable. Command: /full-team:verify checks that every component plugin is present and reports what is missing.",
+      "category": "workflow",
+      "tags": [
+        "meta",
+        "full-team",
+        "install-all",
+        "solo",
+        "workflow"
+      ]
     }
-  ]
+  ],
+  "$schema": "https://www.schemastore.org/claude-code-marketplace.json"
 }

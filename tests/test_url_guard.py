@@ -142,18 +142,21 @@ class FixtureServerBehavior(unittest.TestCase):
         self.assertEqual(r.status, 302)
         self.assertTrue(r.headers.get("Location"))
 
-    def test_env_test_seam_requires_test_mode(self):
-        with mock.patch.dict(os.environ, {"URL_GUARD_EXTRA_ALLOWED": "127.0.0.1",
-                                          "URL_GUARD_TEST_MODE": "1"}):
-            r = safe_get(self.base + "/ok", allow_http=True)
-            self.assertEqual(r.status, 200)
+    def test_environment_cannot_enable_private_allowlist(self):
+        with mock.patch.dict(os.environ, {
+                "URL_GUARD_EXTRA_ALLOWED": "127.0.0.1",
+                "URL_GUARD_TEST_MODE": "1"}):
+            with self.assertRaises(BlockedUrlError):
+                check_url("https://127.0.0.1/")
 
-    def test_env_allowlist_ignored_without_test_mode(self):
-        with mock.patch.dict(os.environ, {"URL_GUARD_EXTRA_ALLOWED": "127.0.0.1"}):
-            os.environ.pop("URL_GUARD_TEST_MODE", None)
-            with self.assertWarns(RuntimeWarning):
-                with self.assertRaises(BlockedUrlError):
-                    check_url("https://127.0.0.1/")
+    def test_direct_opener_disables_ambient_proxies(self):
+        with mock.patch.dict(os.environ, {
+                "HTTPS_PROXY": "http://127.0.0.1:9999",
+                "HTTP_PROXY": "http://127.0.0.1:9999"}):
+            opener = url_guard._build_direct_opener()
+        handlers = [h for h in opener.handlers
+                    if isinstance(h, url_guard.urllib.request.ProxyHandler)]
+        self.assertFalse([h for h in handlers if h.proxies], handlers)
 
 
 if __name__ == "__main__":
