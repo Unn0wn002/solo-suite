@@ -177,7 +177,22 @@ def make_fingerprinter():
     return fingerprint, source
 
 
-def _finding(rel, lineno, label, secret, fingerprint):
+def _finding(rel, lineno, label, secret, fingerprint=None):
+    # ``fingerprint`` is always supplied by the current scanner.  The optional
+    # legacy form is retained for integrations that imported this helper before
+    # keyed fingerprints became part of the public output contract.
+    if fingerprint is None:
+        legacy_digest = make_fingerprinter()[0](secret).split(":", 1)[-1]
+        legacy_redacted = "<redacted>" if len(str(secret)) <= 8 else (
+            f"{str(secret)[:4]}...{str(secret)[-4:]}"
+        )
+        return {
+            "path": rel,
+            "line": lineno,
+            "rule": label,
+            "redacted": legacy_redacted,
+            "fingerprint": legacy_digest,
+        }
     return {
         "path": rel,
         "line": lineno,
@@ -238,7 +253,7 @@ def _decode_lines(path, max_bytes):
         return "unsupported_encoding", None
 
 
-def scan_file(path, root, max_bytes, fingerprint):
+def _scan_file_with_outcome(path, root, max_bytes, fingerprint):
     """Scan ONE file. Returns (outcome, findings, long_lines_chunked).
     outcome is always one of OUTCOMES — a file can never silently produce
     no outcome. Over-long lines are SCANNED in overlapping chunks, never
@@ -271,6 +286,47 @@ def scan_file(path, root, max_bytes, fingerprint):
     except OSError:
         return "unreadable", [], long_lines
     return "inspected", findings, long_lines
+
+
+def positive_int(value):
+    """Parse a positive integer for legacy callers and argparse adapters."""
+    try:
+        number = int(value)
+    except (TypeError, ValueError) as exc:
+        raise argparse.ArgumentTypeError("must be a positive integer") from exc
+    if number < 1:
+        raise argparse.ArgumentTypeError("must be positive")
+    return number
+
+
+def scan_file(path, root, max_bytes, fingerprint=None):
+    """Compatibility wrapper around the coverage-aware scanner.
+
+    New callers receive the full ``(outcome, findings, long_lines)`` tuple by
+    supplying a fingerprinter.  Older callers that omit it receive only the
+    findings list, matching the v1.0.12 helper seam.
+    """
+    if fingerprint is None:
+        legacy_fp = make_fingerprinter()[0]
+        _outcome, findings, _long_lines = _scan_file_with_outcome(
+            path, root, max_bytes, legacy_fp)
+        return findings
+    return _scan_file_with_outcome(path, root, max_bytes, fingerprint)
+
+
+def scan_tree(root, max_bytes):
+    """Legacy tree API returning ``(scanned_count, findings)``."""
+    fingerprint = make_fingerprinter()[0]
+    self_path = os.path.abspath(__file__)
+    scanned = 0
+    findings = []
+    for path in iter_candidates(root, self_path):
+        outcome, hits, _long_lines = _scan_file_with_outcome(
+            path, root, max_bytes, fingerprint)
+        if outcome == "inspected":
+            scanned += 1
+        findings.extend(hits)
+    return scanned, findings
 
 
 def iter_candidates(root, self_path):
@@ -782,7 +838,7 @@ def scan_git_history(root, fingerprint, max_commits, max_files,
     return result
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("root", help="repository directory OR a single file")
     ap.add_argument("--max-bytes", type=int, default=2_000_000)
@@ -796,7 +852,7 @@ def main():
     ap.add_argument("--history-max-bytes", type=int, default=100_000_000,
                     help="total unique historical blob bytes")
     ap.add_argument("--history-max-findings", type=int, default=10_000)
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     if not 1 <= args.max_bytes <= 100_000_000:
         print("--max-bytes must be positive and no greater than 100000000 (got %d)" % args.max_bytes)
         return 2

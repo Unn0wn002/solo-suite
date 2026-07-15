@@ -1,12 +1,13 @@
 ---
 name: database-fix
 description: Safely apply database fixes in PostgreSQL, MySQL, or SQLite — add missing indexes without downtime, write reversible migrations, add constraints to existing data, backfill columns, deduplicate rows, and clean orphaned records. Use when the user says "fix the database issues", "add the missing indexes", "write a migration for", "clean up the orphaned rows", or wants any schema or data change applied from an audit or debug finding.
-disable-model-invocation: true
 ---
 
 # Database Fix
 
 Schema and data changes are the highest-blast-radius edits in a codebase — a bad one can lock a production table or destroy rows irreversibly. Every fix here follows the same contract: **restore point → smallest safe change → verify → next**.
+
+**Manual execution boundary:** generate and review fixes freely, but never run DDL, DML, maintenance statements, migrations, or database tooling against a live database until the user has confirmed the exact target, restore point, statement, and expected impact. Approval is per state-changing step, not blanket approval for the session.
 
 ## Golden rules
 
@@ -100,6 +101,8 @@ Expand → migrate → contract: add the new structure, backfill and dual-write 
 Re-run the relevant audit sections from **database-audit** and show before/after evidence (the query result that flagged the issue, now clean, and the EXPLAIN now using the index).
 
 ## Project memory integration (solo-team)
+
+**AgentRoom proposal mode:** when a trusted seat lists any memory target below under `proposes`, write the intended target, patch/entries, evidence, and merge notes to `.solo/proposals/<seat>-<run_id>.md` instead of editing that target. Only the memory steward merges it; missing seat or run identity stops the write. Direct memory updates remain normal outside a stewarded room.
 
 If a `.solo/` directory exists at the project root — the solo-team suite's shared memory — read `handoff.md` and `tasks.md` for context before starting, so the work is grounded in the project's actual state. Afterward, persist the results: capture the prioritized fix list as tasks in `.solo/tasks.md` (stable T-IDs, Doing/Todo/Blocked/Done sections, per project-memory-manager's conventions), append significant findings, decisions, or accepted risks to `.solo/decisions.md`, and note what was run in `handoff.md`. This keeps results in persistent project memory instead of dying with the session, and lets `/solo:next-step` and `/release:preflight` see them. If `.solo/` doesn't exist, proceed normally (and optionally mention the solo plugin can add cross-session memory).
 

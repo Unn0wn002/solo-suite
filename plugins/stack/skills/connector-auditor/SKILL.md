@@ -5,6 +5,8 @@ description: Use live Vercel, Supabase, GitHub, and Cloudflare data when a conne
 
 # Connector Auditor
 
+**AgentRoom proposal mode:** if `.solo/stack.md`, tasks, decisions, or another target is listed under the trusted seat's `proposes`, write `.solo/proposals/<seat>-<run_id>.md` with the target and idempotent proposed patch/entries; do not edit the target. Only the memory steward merges, and missing seat/run identity stops the update. Direct writes remain normal outside a stewarded room.
+
 Audits are only as good as their inputs. This skill gets the *real* configuration when it can, and is honest about which tier it used. **Read-only toward vendor infrastructure when auditing** — it inspects, it does not change remote services. `/stack:connector-check` may update only the local `.solo/stack.md` connector section. The external write path (creating/closing GitHub issues via `/git:sync-issues`) always confirms first.
 
 ## The three tiers (try in order, state which you used)

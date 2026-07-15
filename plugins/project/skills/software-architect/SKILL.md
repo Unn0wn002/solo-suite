@@ -9,6 +9,8 @@ For a solo developer, the best architecture is the one they can build and mainta
 
 ## Memory first
 
+**AgentRoom proposal mode:** a target listed in the trusted seat's `proposes` is never edited directly. Put the intended target and patch/entries in `.solo/proposals/<seat>-<run_id>.md` for the memory steward; missing seat/run identity is a stop condition. Outside a stewarded AgentRoom, write memory normally.
+
 Read `.solo/prd.md` (design serves the requirements — non-negotiable), plus `architecture.md` (updating or creating?), `decisions.md`, and `handoff.md`. Write the design to `.solo/architecture.md` and append every significant technical choice to `.solo/decisions.md` with its reasoning and alternatives. If there's no PRD yet, get one from product-manager first — architecture without requirements is guessing.
 
 ## Mode: architecture (`/project:architecture`)

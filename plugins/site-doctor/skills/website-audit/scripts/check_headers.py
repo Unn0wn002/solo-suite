@@ -68,7 +68,7 @@ def fetch(url, follow_redirects=True, method="GET"):
     except BlockedUrlError as e:
         return None, {"_error": "BLOCKED unsafe target: %s" % e}, []
     except Exception as e:
-        return None, {"_error": str(e)}, []
+        return None, {"_error": f"{type(e).__name__}: {e}"}, []
 
 
 def same_site(host_a, host_b):
@@ -126,6 +126,9 @@ def check_https_redirect(url, max_hops=5):
             return
         if status in (301, 302, 307, 308):
             location = headers.get("location", "")
+            if not location:
+                report("FAIL", f"HTTP redirect hop {hops + 1} has no Location header")
+                return
             nxt = urlparse(location)
             if not nxt.scheme:  # relative redirect — resolve against current
                 from urllib.parse import urljoin
@@ -166,6 +169,59 @@ def check_https_redirect(url, max_hops=5):
         report("FAIL", f"HTTP does not redirect to HTTPS (got {status})")
         return
     report("FAIL", f"HTTP redirect chain exceeded {max_hops} hops without reaching HTTPS")
+
+
+def validate_hsts(value, is_https=True):
+    """Validate one HSTS value as a small public compatibility seam.
+
+    The full header audit performs the same checks in context.  Keeping this
+    callable lets fixtures and downstream integrations validate a single value
+    without constructing a complete response header map.
+    """
+    value = (value or "").strip()
+    if not value:
+        report("FAIL", "HSTS is empty")
+        return
+    directives = {}
+    malformed = False
+    for part in value.split(";"):
+        part = part.strip()
+        if not part:
+            report("FAIL", "HSTS contains an empty directive")
+            malformed = True
+            continue
+        name, sep, raw = part.partition("=")
+        name = name.strip().lower()
+        if not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+            report("FAIL", f"HSTS contains a malformed directive: {part!r}")
+            malformed = True
+            continue
+        if name in directives:
+            report("FAIL", f"HSTS: duplicate directive '{name}'")
+            malformed = True
+        directives[name] = raw.strip().strip('"') if sep else ""
+    allowed = {"max-age", "includesubdomains", "preload"}
+    unknown = set(directives) - allowed
+    if unknown:
+        report("FAIL", f"HSTS has unknown/malformed directive(s): {sorted(unknown)}")
+        malformed = True
+    raw_age = directives.get("max-age")
+    if raw_age is None or not raw_age.isdigit():
+        report("FAIL", "HSTS requires a numeric max-age")
+        return
+    age = int(raw_age)
+    if age == 0:
+        report("FAIL", "HSTS max-age=0 disables HSTS")
+    elif not is_https:
+        report("WARN", "HSTS is ignored on an HTTP response")
+    elif age < 15552000:
+        report("WARN", f"HSTS max-age is short ({age}s)")
+    elif not malformed:
+        report("PASS", f"HSTS max-age valid ({age}s)")
+    if "preload" in directives and (
+        "includesubdomains" not in directives or age < 31536000
+    ):
+        report("WARN", "HSTS preload requires max-age >= 31536000 and includeSubDomains")
 
 
 VALID_REFERRER_POLICIES = {

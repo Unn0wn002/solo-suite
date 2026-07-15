@@ -8,9 +8,11 @@ release/gen_release_inventory.py against the pristine previous tree).
 This test recomputes the current tree's file digests with the SAME
 shared ignore rules (generated files — __pycache__, *.pyc, coverage
 output, dist, test caches — never count as changes) and fails when a
-changed plugin retains its old version. The exact v1.0.16 audit finding
-— ai/gate/solo changed since v1.0.15 at unchanged versions — can no
-longer ship."""
+changed plugin retains its old version. A post-release development tree may
+carry an explicit ``release/unreleased-remediation.json`` version plan, but
+the release builder refuses to package any commit containing that plan. The
+exact v1.0.16 audit finding — ai/gate/solo changed since v1.0.15 at
+unchanged versions — therefore still cannot ship."""
 import importlib.util
 import json
 import os
@@ -23,6 +25,7 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INVENTORY = os.path.join(REPO, "release",
                          "previous-release-inventory.json")
 GEN = os.path.join(REPO, "release", "gen_release_inventory.py")
+UNRELEASED = os.path.join(REPO, "release", "unreleased-remediation.json")
 
 _spec = importlib.util.spec_from_file_location("gen_release_inventory",
                                                GEN)
@@ -44,6 +47,17 @@ class ReleaseVersioning(unittest.TestCase):
             cls.prev = json.load(f)
         cls.now_files = gen.walk_files(REPO)
         cls.now = gen.build_inventory(REPO)
+        cls.unreleased = None
+        if os.path.isfile(UNRELEASED):
+            with open(UNRELEASED, encoding="utf-8") as f:
+                cls.unreleased = json.load(f)
+
+    @staticmethod
+    def version_tuple(value):
+        if not isinstance(value, str) or not re.fullmatch(
+                r"[0-9]+\.[0-9]+\.[0-9]+", value):
+            return None
+        return tuple(int(part) for part in value.split("."))
 
     def changed_files(self, plugin):
         """Added/removed/modified files under plugins/<plugin>/, computed
@@ -63,6 +77,40 @@ class ReleaseVersioning(unittest.TestCase):
                          "solo-suite/release-inventory-v1")
         self.assertTrue(self.prev["files"])
         self.assertTrue(self.prev["plugin_versions"])
+
+    def test_unreleased_remediation_plan_is_fail_closed(self):
+        if self.unreleased is None:
+            return
+        plan = self.unreleased
+        self.assertEqual(plan.get("schema"),
+                         "solo-suite/unreleased-remediation-v1")
+        base_release = self.version_tuple(plan.get("base_release"))
+        target_release = self.version_tuple(plan.get("target_release"))
+        current_release = self.version_tuple(self.now["release"])
+        self.assertIsNotNone(base_release)
+        self.assertIsNotNone(target_release)
+        self.assertIsNotNone(current_release)
+        self.assertGreater(target_release, base_release)
+        # The plan is present in two valid release-cut phases: before the
+        # target metadata is applied, and after it is applied but before the
+        # final cut removes the plan. No third/current release is accepted.
+        self.assertIn(current_release, (base_release, target_release))
+        self.assertEqual(set(plan.get("tasks", [])),
+                         {"T-SUITE-%03d" % n for n in range(1, 9)})
+        planned = plan.get("planned_plugin_versions")
+        self.assertIsInstance(planned, dict)
+        self.assertTrue(planned)
+        for name, planned_version in planned.items():
+            self.assertIn(name, self.now["plugin_versions"])
+            planned_tuple = self.version_tuple(planned_version)
+            current_tuple = self.version_tuple(self.now["plugin_versions"][name])
+            self.assertIsNotNone(planned_tuple)
+            self.assertIsNotNone(current_tuple)
+            if current_release == base_release:
+                self.assertGreater(planned_tuple, current_tuple, name)
+            else:
+                self.assertEqual(planned_tuple, current_tuple, name)
+        self.assertTrue(plan.get("release_blocked_until"))
 
     def test_checkout_policy_keeps_inventory_bytes_cross_platform(self):
         """Git must materialize release text as LF even on Windows.
@@ -117,6 +165,8 @@ class ReleaseVersioning(unittest.TestCase):
 
     def test_materially_changed_plugins_carry_new_versions(self):
         offenders = []
+        planned = ((self.unreleased or {}).get("planned_plugin_versions")
+                   or {})
         for name, prev_version in sorted(
                 self.prev["plugin_versions"].items()):
             now_version = self.now["plugin_versions"].get(name)
@@ -124,6 +174,11 @@ class ReleaseVersioning(unittest.TestCase):
                 continue                      # plugin removed: nothing to pin
             changed = self.changed_files(name)
             if changed and now_version == prev_version:
+                target = planned.get(name)
+                if (self.version_tuple(target) is not None
+                        and self.version_tuple(target)
+                        > self.version_tuple(now_version)):
+                    continue
                 offenders.append(
                     "plugins/%s changed since release %s but kept version "
                     "%s — bump it. Changed files (first 10): %s"

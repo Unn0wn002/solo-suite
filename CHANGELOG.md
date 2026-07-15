@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.0.27 — 2026-07-16
+
+Post-audit suite-integrity and full-team behavior hardening. This release
+turns the T-SUITE-001 through T-SUITE-008 remediation into the next reviewed
+release line while preserving the immutable v1.0.26 record:
+
+- Manual-only browser/security/evidence commands cannot appear in executable
+  AgentRoom command lists; evidence finalization is a structured user handoff
+  with preview, separate confirmation, and a coordination-only finalizer.
+- AgentRoom validation models complete command side effects, steward-owned
+  proposal routing, read-only-seat proposal transport, and same-stage data
+  dependencies; transitive memory-writing skills honor proposal mode.
+- Tracker audit output redacts target, redirect, origin, cookie, exception,
+  query, fragment, path, and userinfo values while retaining safe structural
+  classifications.
+- Gate evidence freshness uses the exact elapsed-time cutoff, and the public
+  launch contract states that 14/14 category records are necessary but not
+  sufficient: ten independently evidenced reviewer controls fail closed.
+- Full-team orchestration, room stages, context inputs, vendor command lists,
+  BASE/INTEGRATION/FINAL SHA transport, steward cutoff, and least-privilege
+  agent tools now tell one consistent story.
+- All 56 skills enforce exact `name` + `description` frontmatter; manual skill
+  execution boundaries live in the body and README/policy drift is repaired.
+- The public v1.0.26 tag/release binding remains recorded in
+  `release/v1.0.26-tag-verification.md`; the release process requires a fresh
+  self-check, room validation, regression run, and deterministic package check.
+  `release/unreleased-remediation.json` is the fail-closed cut plan and is
+  removed only in the final release-cut commit.
+
+Release verification uses exact 7-payload, 8-unsigned-file, 16-signed-member,
+and 18-public-asset allowlists. GitHub Immutable Releases and a no-bypass `refs/tags/v*` ruleset remain required; an Administration-write audit token
+performs GET-only settings checks. The publisher API-peels the annotated tag
+and binds authenticated, signed provenance across upload, draft-download, and public-download boundaries.
+
+### Versions
+
+- ai 2.5.4 -> 2.5.5 (AgentRooms writer-scope and orchestration contract)
+- browser 1.1.1 -> 1.1.2 (manual-only browser QA boundaries)
+- design 1.0.1 -> 1.0.2 (suite-integrity-aligned design workflow)
+- dev 1.0.2 -> 1.0.3 (full-stack implementation boundary wording)
+- docs 1.1.1 -> 1.1.2 (documentation workflow contract)
+- gate 2.5.4 -> 2.5.5 (fail-closed evidence and gate policy)
+- git 1.1.1 -> 1.1.2 (release and repository workflow contract)
+- growth 1.0.2 -> 1.0.3 (conversion-audit scope and handoff)
+- project 1.0.1 -> 1.0.2 (product and architecture workflow contract)
+- release 1.1.1 -> 1.1.2 (release-preflight and security boundary)
+- repo 1.0.3 -> 1.0.4 (read-only repository intelligence contract)
+- security 1.1.2 -> 1.1.3 (authorization and manual-test boundaries)
+- site-doctor 3.6.3 -> 3.6.4 (audit safety, redaction, and network guards)
+- solo 1.9.4 -> 1.9.5 (full-team orchestration and memory workflow)
+- stack 1.4.4 -> 1.4.5 (stack-aware connector boundaries)
+- test 1.0.2 -> 1.0.3 (QA workflow contract)
+- full-team meta-plugin: unchanged at 1.0.2
+- spec: unchanged at 1.0.2
+- marketplace 1.0.26 -> 1.0.27
+
 ## 1.0.26 — 2026-07-14
 
 Fail-closed audit and release-verification hardening. A pre-merge review of

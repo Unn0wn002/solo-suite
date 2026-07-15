@@ -5,6 +5,8 @@ description: Decide whether work is ready to continue coding, ready to merge, or
 
 # Quality Gatekeeper
 
+**AgentRoom proposal mode:** gate evidence/verdicts remain in output or declared direct artifacts. Any blocker task, risk, or other memory target under the trusted seat's `proposes` must be written to `.solo/proposals/<seat>-<run_id>.md`, not the target. Only the steward merges; missing seat/run identity is a stop condition.
+
 A gate is a decision, not a vibe: **GO** or **NO-GO**, with the specific blockers when it's no-go. It hard-blocks on critical failures (a great average doesn't cancel a missing backup or committed secret). Reads `.solo/` and delegates the deep checks to the specialist plugins. Three modes (a fourth, full-readiness scoring, lives in `production-readiness-reviewer` behind `/gate:production-ready`).
 
 ## Mode: before-code (`/gate:before-code`)

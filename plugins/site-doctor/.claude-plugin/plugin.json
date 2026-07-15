@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "site-doctor",
   "displayName": "solo-suite site-doctor",
-  "version": "3.6.3",
+  "version": "3.6.4",
   "description": "Complete production toolkit: audit, debug, and fix websites and databases. 26 skills spanning security (OWASP), SEO, performance, accessibility, API, observability, infrastructure, deployment, cost, backups, compliance, data migration, mobile, content, analytics, load testing, incident response, dependencies, email deliverability, and forms. Network helpers are SSRF-guarded and budget-bounded; secret findings are redacted; dynamic security and side-effecting checks are manual-only. PostgreSQL, MySQL, SQLite. Integrates two-way with the solo-team suite's .solo/ project memory when present: audits read project context and write their fix lists into tasks.md.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

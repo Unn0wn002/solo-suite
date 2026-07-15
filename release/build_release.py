@@ -54,6 +54,7 @@ REGULAR_GIT_MODES = {"100644", "100755"}
 RELEASE_VERSION_RE = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
 CLAUDE_CLI_PACKAGE = "@anthropic-ai/claude-code"
 CLAUDE_CLI_LOCK_PATH = "release/claude-cli/package-lock.json"
+UNRELEASED_REMEDIATION_PATH = "release/unreleased-remediation.json"
 
 
 class ReleaseBuildError(RuntimeError):
@@ -525,6 +526,12 @@ def main(argv=None):
         commit, source_tree_oid, object_format = resolve_git_source(
             root, args.commit)
         entries = git_tree_entries(root, commit)
+        if any(rel == UNRELEASED_REMEDIATION_PATH
+               for rel, _mode, _oid in entries):
+            raise ReleaseBuildError(
+                "%s is present; apply the planned suite/component version "
+                "bumps and remove the plan in the release-cut commit before "
+                "packaging" % UNRELEASED_REMEDIATION_PATH)
         mk = json.loads(commit_file(
             root, entries, ".claude-plugin/marketplace.json").decode(
                 "utf-8", "strict"))

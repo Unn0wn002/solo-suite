@@ -95,15 +95,20 @@ class MetaParser(HTMLParser):
             self._h1_buf.append(data)
 
 
-def fetch(url):
+def fetch(url, detailed=None):
     try:
         r = safe_get(url, timeout=TIMEOUT, allow_http=True, max_bytes=MAX_BYTES,
                      headers={"User-Agent": UA})
     except BlockedUrlError as e:
+        if detailed is not True:
+            return "BLOCKED: %s" % e, None, ""
         return None, None, "", ("blocked", "BLOCKED: %s" % e), None
     except Exception as e:
+        if detailed is not True:
+            return None, None, ""
         return (None, None, "", ("fetch-error", "request failed: %s" % e),
                 None)
+    legacy = detailed is False or (detailed is None and not hasattr(r, "truncated"))
     xrobots = r.headers.get("X-Robots-Tag", "")
     final_url = getattr(r, "url", url)
     if not same_audit_origin(url, final_url, allow_http_upgrade=True):
@@ -111,15 +116,19 @@ def fetch(url):
                 ("redirect-host", "redirected to unrelated origin %s" %
                  final_url), final_url)
     if not 200 <= r.status < 300:
+        if legacy:
+            return r.status, None, ""
         return (r.status, None, xrobots,
                 ("http-error", "HTTP %s" % r.status), final_url)
-    if r.truncated:
+    if getattr(r, "truncated", False):
         return (r.status, None, xrobots,
                 ("truncated", "response exceeded the %d-byte crawl limit" %
                  MAX_BYTES), final_url)
     ctype = r.headers.get("Content-Type", "")
     media_type = ctype.split(";", 1)[0].strip().lower()
     if media_type not in ("text/html", "application/xhtml+xml"):
+        if legacy:
+            return None, None, xrobots
         return (r.status, None, xrobots,
                 ("non-html", "Content-Type %r is not HTML" %
                  (media_type or "(missing)")), final_url)
@@ -146,6 +155,8 @@ def fetch(url):
         return (r.status, None, xrobots,
                 ("charset", "HTML body is not valid %s" % charset),
                 final_url)
+    if legacy:
+        return r.status, html, xrobots
     return r.status, html, xrobots, None, final_url
 
 
@@ -210,6 +221,11 @@ def main():
     args = ap.parse_args()
 
     start = urldefrag(args.start_url.strip())[0]
+    parsed_start = urlparse(start)
+    if parsed_start.path == "/" and not parsed_start.query:
+        # Keep the historical bare-origin queue key.  Relative subdirectory
+        # URLs retain their trailing slash semantics.
+        start = start[:-1]
     host = normalized_hostname(start)
     if not host:
         print("Invalid URL"); return 2
@@ -231,7 +247,18 @@ def main():
         if url in seen:
             continue
         seen.add(url)
-        status, html, xrobots, issue, final_url = fetch(url)
+        try:
+            fetched = fetch(url, detailed=True)
+        except TypeError as exc:
+            # Older injected adapters accepted only ``fetch(url)``.
+            if "detailed" not in str(exc):
+                raise
+            fetched = fetch(url)
+        if len(fetched) == 3:  # legacy/mock adapter
+            status, html, xrobots = fetched
+            issue, final_url = None, url
+        else:
+            status, html, xrobots, issue, final_url = fetched
         if not html:
             detail = issue[1] if issue else "no HTML returned"
             print(f"[skip] {status} {url} — {detail}")

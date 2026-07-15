@@ -42,15 +42,17 @@ Supported versions: the latest released version only.
   checks out revisions; an incomplete history scan is not a clean result.
   Sync/config conventions store token **names** (environment variables), not
   values; `.solo/config.md` is gitignored.
-- **Manual-only invocation** (`disable-model-invocation: true`) for anything
-  that mutates production, migrates data, submits forms, syncs externally, or
-  handles secrets: /security:secrets-fix, /site-doctor:migrate-data,
+- **Manual execution boundaries.** User-facing commands that mutate
+  production, migrate data, submit forms, sync externally, or handle secrets
+  use `disable-model-invocation: true`: /security:secrets-fix, /site-doctor:migrate-data,
   /site-doctor:load-test, /git:sync-issues, /solo:sync-grafana,
   /solo:sync-obsidian, /browser:smoke-test, /browser:form-submit-test,
   /security:rls-test, /site-doctor:security-scan (dynamic mode),
-  /gate:finalize-evidence, and
-  the website-fix / database-fix / data-migration / memory-sync skills. Each
-  also requires explicit in-flow confirmation before writing.
+  and /gate:finalize-evidence. Skills keep exactly `name` + `description`
+  frontmatter; website-fix, database-fix, data-migration, and memory-sync state
+  the same stop/preview/confirmation rule in their body. Loading a skill never
+  authorizes a state change. Every boundary requires explicit in-flow
+  confirmation before writing.
 - **Read-only audits.** Database audits carry a policy test that rejects
   write-capable SQL in the read-only references; browser QA defaults to
   non-production targets with synthetic data.

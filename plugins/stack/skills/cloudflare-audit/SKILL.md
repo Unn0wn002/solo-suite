@@ -5,6 +5,8 @@ description: Audit a Cloudflare setup for a site — DNS records, SSL/TLS mode, 
 
 # Cloudflare Audit
 
+**AgentRoom proposal mode:** preserve raw audit evidence in the seat's declared direct artifact. Any tasks, decisions, handoff, stack update, or other target listed under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries; never edit that target. Only the memory steward merges, and missing seat/run identity stops the write.
+
 Cloudflare sits in front of everything — DNS, TLS, caching, and the WAF — so a misconfiguration here undermines the whole site: an exposed origin lets attackers skip the WAF entirely, a "Flexible" SSL mode leaves traffic unencrypted to your server, a grey-clouded record means no protection at all. This skill audits the Cloudflare-specific configuration and hands the underlying mechanics (DNS/TLS/network exposure, security headers) to site-doctor's generic engines so the two agree.
 
 ## Setup

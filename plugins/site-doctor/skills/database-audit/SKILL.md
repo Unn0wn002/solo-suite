@@ -5,6 +5,8 @@ description: Audit a database for schema quality, missing or wasted indexes, slo
 
 # Database Audit
 
+**AgentRoom proposal mode:** audit evidence stays in the seat's declared direct artifact. Tasks, decisions, handoff, or any other target declared under `proposes` must be written as `.solo/proposals/<seat>-<run_id>.md` with target and proposed entries, never directly to the target. Only the steward merges; missing seat/run identity is a stop condition.
+
 An audit is read-only. Run only SELECTs, EXPLAINs, SHOWs, and **read-only** PRAGMAs (query form, never `PRAGMA x = value`, never `PRAGMA optimize`, never `ANALYZE`/`VACUUM`/`REINDEX`) — never mutate data, schema, or planner statistics while auditing, and prefer a read-only role or a recent snapshot for production databases. Findings get fixed later via the **database-fix** skill.
 
 ## Setup

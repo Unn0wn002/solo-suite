@@ -1,6 +1,5 @@
 ---
 name: memory-sync
-disable-model-invocation: true
 description: Mirror the project's .solo/ memory out to external tools so status and notes live where you want them — an Obsidian vault (project notes, linked and searchable) and a Grafana dashboard (project health metrics and release/audit annotations). Use when the user says sync, "push to Obsidian", "update my vault", "sync to Grafana", "project dashboard", mirror project status, or wants .solo/ reflected in their notes app or a dashboard. Reads .solo/; writes to the destination idempotently and never deletes the user's own content.
 ---
 
@@ -27,7 +26,7 @@ Sync targets are remembered in `.solo/config.md` so you only configure them once
 
 ### Safety: preview first, confirm before writing
 
-This skill is **manual-only** (`disable-model-invocation: true` — run it via `/solo:sync-obsidian` / `/solo:sync-grafana`), and every external write is gated:
+This skill is **manual-only at the execution boundary**: invoke the user-facing `/solo:sync-obsidian` or `/solo:sync-grafana` command, and never perform an external write merely because this skill was loaded for planning or routing. Every external write is gated:
 
 1. **Default is a dry run.** First produce a preview: which notes/dashboard/annotations *would* be created or updated, with a diff-style summary. No external write happens in the preview.
 2. **Explicit confirmation** ("yes, apply") is required before any write to the vault, the Grafana API, or any other destination.

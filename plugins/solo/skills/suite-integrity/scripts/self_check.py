@@ -104,6 +104,10 @@ OFFICIAL_SKILL_KEYS = {"name", "description", "license", "compatibility",
                        "effort", "context", "agent", "hooks", "paths",
                        "shell", "when_to_use"}
 OFFICIAL_COMMAND_KEYS = set(OFFICIAL_SKILL_KEYS)
+# The platform accepts more fields, but Solo Suite intentionally keeps shipped
+# SKILL.md frontmatter deterministic. Safety and execution boundaries belong in
+# the body and in user-facing command metadata, not in auto-routed skills.
+SUITE_SKILL_KEYS = {"name", "description"}
 # Subagent frontmatter per code.claude.com/docs/en/sub-agents (v2.1.x):
 OFFICIAL_AGENT_KEYS = {"name", "description", "tools", "disallowedTools",
                        "model", "maxTurns", "skills", "memory",
@@ -185,10 +189,10 @@ def check_plugin_content(plug_root, plug_label, fail, warn, passes):
         for k in ("name", "description"):
             if not str(fm.get(k, "")).strip():
                 fail("%s: frontmatter missing %r" % (rel, k)); bad += 1
-        unknown = set(fm) - OFFICIAL_SKILL_KEYS
-        if unknown:
-            fail("%s: non-official frontmatter keys %s (official: %s)"
-                 % (rel, sorted(unknown), sorted(OFFICIAL_SKILL_KEYS))); bad += 1
+        extra = set(fm) - SUITE_SKILL_KEYS
+        if extra:
+            fail("%s: skill frontmatter must be exactly name + description; "
+                 "remove %s" % (rel, sorted(extra))); bad += 1
         for key, allowed in SKILL_FIELD_VALUES.items():
             if key in fm and str(fm[key]) not in allowed:
                 fail("%s: frontmatter %s=%r is not a documented value %s"
@@ -302,8 +306,9 @@ def main():
             fail("invalid JSON %s: %s" % (f,e)); bad += 1
     if not bad: passes.append("all %d plugin.json valid" % len(pjs))
 
-    # 2+3) per-plugin content: commands, skills, frontmatter (proper YAML,
-    # official keys), helper references, ${CLAUDE_PLUGIN_ROOT} paths
+    # 2+3) per-plugin content: commands, skills, frontmatter (proper YAML;
+    # suite skills use exactly name + description), helper references,
+    # ${CLAUDE_PLUGIN_ROOT} paths
     cmds = sorted(p.replace(os.sep, "/") for p in glob.glob("plugins/*/commands/*.md"))
     total_bad = 0
     for plug_dir in sorted(glob.glob("plugins/*")):
@@ -314,8 +319,9 @@ def main():
     sdirs = sorted(d for d in glob.glob("plugins/*/skills/*") if os.path.isdir(d))
     if not total_bad:
         passes.append("all %d commands + %d skills/agents structurally valid "
-                      "(frontmatter parsed as YAML, official keys only, helper "
-                      "paths resolve via ${CLAUDE_PLUGIN_ROOT})" % (len(cmds), len(sdirs)))
+                      "(skill frontmatter exactly name + description; command/"
+                      "agent frontmatter uses official keys; helper paths "
+                      "resolve via ${CLAUDE_PLUGIN_ROOT})" % (len(cmds), len(sdirs)))
 
     # 4+5) README + marketplace counts match reality
     real = dict(plugins=len(glob.glob("plugins/*/.claude-plugin/plugin.json")),

@@ -49,7 +49,7 @@ class ReleaseAssetPolicy(unittest.TestCase):
             self.workflow,
         )
         self.assertIsNotNone(match)
-        self.assertEqual(match.group(1), "1.0.25")
+        self.assertEqual(match.group(1), "1.0.26")
         self.assertEqual(match.group(1), inventory["release"])
         self.assertIn(
             'test "$INVENTORY_VERSION" = "$RELEASE_BASELINE_VERSION"',
@@ -266,8 +266,8 @@ class ReadmeReleaseVerification(unittest.TestCase):
         section = readme.split("### Verify a published release", 1)[1].split(
             "\n---", 1
         )[0]
-        self.assertIn("TAG=v1.0.26", section)
-        self.assertIn("BASELINE=v1.0.25", section)
+        self.assertIn("TAG=v1.0.27", section)
+        self.assertIn("BASELINE=v1.0.26", section)
         self.assertIn("Run this verifier on GNU/Linux or Git Bash", section)
         self.assertIn("Stock macOS utilities do not support", section)
         self.assertIn('test "$(wc -l < "$VERIFY_TMP/final-assets")" = 18',
@@ -318,7 +318,7 @@ class ReadmeReleaseVerification(unittest.TestCase):
 
     def test_changelog_describes_new_controls_without_rewriting_old_release_state(self):
         changelog = read(CHANGELOG)
-        current = changelog.split("## 1.0.26", 1)[1].split("\n## ", 1)[0]
+        current = changelog.split("## 1.0.27", 1)[1].split("\n## ", 1)[0]
         self.assertNotIn("immutable v1.0.25", current.lower())
         self.assertNotIn("8-payload", current)
         for marker in (

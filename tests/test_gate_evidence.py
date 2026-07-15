@@ -215,6 +215,24 @@ class RecordRules(Fixture):
     def test_fresh_matching_record_accepted(self):
         self.assertEqual(self.reasons(self.record()), [])
 
+    def test_freshness_cutoff_is_exact_not_integer_days(self):
+        exact = self.record(timestamp=iso(
+            self.now - datetime.timedelta(days=7)))
+        self.assertFalse(any("freshness limit" in reason
+                             for reason in self.reasons(exact)))
+
+        one_second_stale = self.record(timestamp=iso(
+            self.now - datetime.timedelta(days=7, seconds=1)))
+        reasons = self.reasons(one_second_stale)
+        self.assertTrue(any("exact 7-day freshness limit" in reason
+                            for reason in reasons), reasons)
+
+    def test_future_timestamp_still_rejected(self):
+        future = self.record(timestamp=iso(
+            self.now + datetime.timedelta(seconds=1)))
+        self.assertTrue(any("timestamp is in the future" in reason
+                            for reason in self.reasons(future)))
+
     # ---- acceptance test C: hand-written records missing the new
     # required fields fail the bundled schema ------------------------------
     def test_C_missing_recorder_command_argv_status_tree_digest_fail(self):
@@ -489,6 +507,25 @@ class CliCompleteness(Fixture):
         r = self.run_cli(profile="api-service")
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
         self.assertIn("10 verified + 4 N/A = 14/14", r.stdout)
+        self.assertIn("verifies category records only", r.stdout)
+        self.assertIn("accessibility-core-flows", r.stdout)
+        self.assertIn("transactional-email", r.stdout)
+
+    def test_json_result_exposes_machine_scope_and_required_controls(self):
+        expected = {
+            "accessibility-core-flows", "authentication", "backup-restore",
+            "committed-secrets", "error-tracking", "mobile-core-flows",
+            "payments", "rls-authorization", "rollback",
+            "transactional-email",
+        }
+        self.assertEqual(set(gp.REVIEWER_REQUIRED_CONTROLS), expected)
+        self.full_set()
+        r = self.run_cli("--json", profile="api-service")
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        payload = json.loads(r.stdout)
+        self.assertTrue(payload["complete"])
+        self.assertEqual(set(payload["reviewer_required_controls"]), expected)
+        self.assertIn("necessary but not sufficient", payload["scope"])
 
     def test_checker_cli_requires_profile_even_for_complete_set(self):
         self.full_set()

@@ -18,5 +18,7 @@ SAFETY: writes to the vault only after a dry-run preview and explicit confirmati
 sync `.solo/config.md`, `.env*`, or secret values into notes; vault path is remembered in
 `.solo/config.md` (non-secrets only, gitignored).
 
+Treat the dry run as a PREVIEW and require EXPLICIT CONFIRMATION before writing any note.
+
 ## Output
 End with the 7-part contract: **Summary · Findings/Work done · Risks · Required fixes · Suggested tasks** (→ `.solo/tasks.md`, stable T-IDs) **· Verification · Next command** (exact slash command).

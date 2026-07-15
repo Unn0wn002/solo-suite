@@ -158,7 +158,7 @@ def positive_float(value):
     return f
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("start_url")
     ap.add_argument("--max-pages", type=positive_int, default=30)
@@ -177,9 +177,28 @@ def main():
     ap.add_argument("--max-redirect-hops", type=positive_int, default=2,
                     help="redirect chains longer than this are reported "
                          "(and fail the run)")
+    ap.add_argument("--max-redirects", dest="max_redirect_hops",
+                    type=positive_int, default=argparse.SUPPRESS,
+                    help=argparse.SUPPRESS)
     ap.add_argument("--fail-on-mixed", action="store_true",
                     help="exit non-zero when mixed content is found")
-    args = ap.parse_args()
+    ap.add_argument("--mixed-content", choices=("warn", "fail"),
+                    help=argparse.SUPPRESS)
+    args = ap.parse_args(argv)
+    if args.mixed_content == "fail":
+        args.fail_on_mixed = True
+    return args
+
+
+def _request_result(value):
+    """Normalize the legacy five-field request seam to the current six."""
+    if len(value) == 5:
+        return (*value, False)
+    return value
+
+
+def main(argv=None):
+    args = parse_args(argv)
 
     start = args.start_url.rstrip("/")
     host = urlparse(start).netloc
@@ -210,8 +229,11 @@ def main():
         if page in seen_pages:
             continue
         seen_pages.add(page)
-        status, final, _, ctype, body, truncated = request(page, "GET", budget)
+        status, final, page_hops, ctype, body, truncated = _request_result(
+            request(page, "GET", budget))
         print(f"[crawl {len(seen_pages)}/{args.max_pages}] {status} {page}")
+        if isinstance(status, int) and page_hops > args.max_redirect_hops:
+            long_chains.append((page, page_hops, final or page))
         if truncated or (isinstance(status, str) and
                          status.startswith("BUDGET:")):
             break
@@ -248,7 +270,8 @@ def main():
                     break
                 if not _sleep_with_budget(args.delay, budget):
                     break
-                st, _, hops, _, _, truncated = request(url, budget=budget)
+                st, _, hops, _, _, truncated = _request_result(
+                    request(url, "HEAD", budget))
                 if truncated or (isinstance(st, str) and
                                  st.startswith("BUDGET:")):
                     break

@@ -8,7 +8,7 @@ Guide the user through the complete cycle — **Intake → PRD → Architecture 
 
 **Project profile first.** Classify the project as one of: `public-marketing-site`, `saas-application`, `e-commerce`, `internal-application`, `api-service`, `library-package` (ask if unclear). Record exactly one standalone canonical line in `.solo/project.md`: `Project profile: <recognized-slug>`, and commit it before final evidence is minted. The evidence recorder/checker read that field from `HEAD:.solo/project.md`, not mutable working-tree text; missing, malformed, ambiguous, symlink-backed, or CLI-mismatched profile sources block N/A evidence. Phases marked with a profile condition run only when the profile (or `.solo/stack.md`) calls for them — and **every skipped phase/command must be reported as N/A with the evidence for why** (e.g. "skipped /stack:audit-supabase — stack.md records no Supabase", "skipped /growth:conversion-audit — internal admin tool, no public funnel"). Silent skips are not allowed.
 
-**The 17 roles this flow staffs** (mirrored by the AgentRooms template `full-team-website.json`: 21 staged seats plus the stage-independent memory steward — 22 seat definitions across 14 stages including finalize, every staged seat mapped to a shipped `room-*` agent): Product Manager, Repo Analyst, Software Architect, UI/UX Designer, Frontend Developer, Backend Developer, Database Engineer, QA Engineer, Browser QA Engineer, Security Engineer, DevOps Engineer, Release Manager, Documentation Writer, Git/PR Manager, AI Agent Reviewer, Growth/Conversion Reviewer, Site Doctor — plus the mechanical Code Reviewer, Worktree Integrator, Evidence Finalizer, and output-only Production Gatekeeper seats — coordinated through the shared `.solo/` memory (with a Memory Steward when run as a multi-agent room; the steward's structured cutoff is `active_through_stage: docs`).
+**The 17 roles this flow staffs** (mirrored by the AgentRooms template `full-team-website.json`: 21 staged seats plus the stage-independent memory steward — 22 seat definitions across 15 stages including finalize, every staged seat mapped to a shipped `room-*` agent): Product Manager, Repo Analyst, Software Architect, UI/UX Designer, Frontend Developer, Backend Developer, Database Engineer, QA Engineer, Browser QA Engineer, Security Engineer, DevOps Engineer, Release Manager, Documentation Writer, Git/PR Manager, AI Agent Reviewer, Growth/Conversion Reviewer, Site Doctor — plus the mechanical Code Reviewer, Worktree Integrator, Evidence Finalization Coordinator, and output-only Production Gatekeeper seats — coordinated through the shared `.solo/` memory (with a Memory Steward when run as a multi-agent room; the steward's structured cutoff is `active_through_stage: docs`). The coordinator never invokes the manual-only finalization command; it prepares the human handoff and verifies the results.
 
 Recommended flow:
 
@@ -45,7 +45,9 @@ Recommended flow:
 #   session's HEAD; each builder first `git merge --ff-only $BASE_SHA`).
 #   Every builder returns: worktree_path, branch, clean commit_sha, tests,
 #   proposal (committed as .solo/proposals/<seat>-<run_id>.json in its branch).
-/git:create-branch
+#   The AgentRoom runner creates the three declared worktrees/branches from
+#   BASE_SHA. /git:create-branch is an output-only planning helper, not a
+#   branch-creation executor, so it is not an automatic step in this flow.
 /dev:implement-feature
 #   Integrate BEFORE review: merge the builders' EXACT SHAs into ONE integration
 #   commit (integration/<run_id>) and record the INTEGRATION SHA with
@@ -54,11 +56,15 @@ Recommended flow:
 #   verify `git rev-parse HEAD` equals INTEGRATION_SHA
 #   (`update_run_state.py verify integration`). Phase 16's pre-freeze review
 #   and memory handoff still run on that integration band; after the freeze,
-#   only the Evidence Finalizer and Gatekeeper run, and both verify FINAL_SHA
+#   only the Evidence Finalization Coordinator, the user's manual command, and
+#   Gatekeeper run; coordinator and gatekeeper both verify FINAL_SHA
 #   (`update_run_state.py verify final`).
+#   After integration, the steward consumes the exact committed builder proposal
+#   JSON files from the merged payloads; never copy an uncommitted proposal
+#   between worktrees or let a builder write shared memory directly.
 # 8/16 — Review (Code Reviewer + AI Agent Reviewer + Designer)
 /dev:code-review
-/ai:review-output          ← AI-output audit between EVERY pair of major phases from here on
+/ai:review-output          ← audit the integrated planning/build handoff before QA
 /design:ui-review          ← post-implementation UI review against design.md
 # 9/16 — Tests (QA Engineer)
 /test:unit
@@ -88,7 +94,8 @@ Recommended flow:
 # 13/16 — Growth (Growth/Conversion Reviewer) — public-marketing-site / e-commerce / saas only
 /growth:conversion-audit   ← N/A (with profile evidence) for internal/api/library projects
 # 14/16 — Merge & release (Git/PR Manager, DevOps, Release Manager)
-/security:secrets-fix      ← manual-only command: run it WITH the user, not for them
+# If secret remediation is required, STOP and return /security:secrets-fix to
+# the user as a manual-only handoff. Never invoke it from this orchestration.
 /git:commit-plan
 /git:pr-review
 /gate:before-merge         ← GATE
@@ -103,16 +110,25 @@ Recommended flow:
 /docs:setup-guide
 /docs:runbook
 /git:release-notes
-# 16/16 — Launch (Evidence Finalizer + OUTPUT-ONLY Production Gatekeeper)
-/ai:review-output          ← final AI-output audit before the freeze
-/solo:handoff-memory       ← handoff/tasks/decisions/risks land BEFORE the freeze
+# 16/16 — Launch (Evidence Finalization Coordinator + user + OUTPUT-ONLY Gatekeeper)
+# The room's AI reviewer already audited the declared planning/build outputs in
+# phase 8. The Documentation Writer submits its completion proposal; then the
+# Memory Steward (or the single-agent flow owner) runs /solo:handoff-memory so
+# handoff/tasks/decisions/risks land BEFORE the freeze. Docs never owns that
+# command in a stewarded room.
+/solo:handoff-memory
 #   RELEASE FREEZE: commit EVERYTHING (code, CI, release plans, docs, and the
 #   just-updated project memory). That commit is FINAL_SHA — record it with
 #   update_run_state.py advance final (run-state-v1: derived from git by the
 #   helper, monotonic, FROZEN once set) into UNTRACKED
 #   .solo/run-state/<run_id>.json (a commit cannot contain its own SHA, so
 #   tracked files are structurally impossible carriers).
-/gate:finalize-evidence    ← all 14 records minted at FINAL_SHA (never earlier)
+#   MANUAL-ONLY HUMAN HANDOFF: the Evidence Finalization Coordinator verifies
+#   FINAL_SHA and returns the exact /gate:finalize-evidence invocation, then
+#   PAUSES. Only the user may invoke it. The command generates the full preview,
+#   stops for a separate explicit confirmation, and executes only with the exact
+#   preview token. The coordinator resumes only after user-confirmed completion
+#   to verify all 14 records. Never auto-invoke or chain this command.
 #   After the freeze NOTHING tracked changes: only untracked
 #   .solo/gate-evidence/ and .solo/run-state/ files are created (gitignore
 #   both). The memory steward does NOT run again after the finalizer.
@@ -121,9 +137,9 @@ Recommended flow:
 #   result reopens work in the NEXT cycle, before a new freeze.
 ```
 
-**Evidence lifecycle (records come LAST, all at once):** specialists produce raw artifacts (`.solo/*.md`, code, tests, plans, docs) as they work — they do **not** write `.solo/gate-evidence/` records, because a record created against an intermediate commit is invalid by construction. When everything is final and committed (FINAL_SHA recorded via `update_run_state.py advance final` — the run-state-v1 contract, SHA derived from git by the helper, frozen once set — in UNTRACKED `.solo/run-state/<run_id>.json`, never in `.solo/handoff.md` or any other tracked file, since a commit cannot contain its own SHA), `/gate:finalize-evidence` re-runs every applicable category command through the canonical **`record_evidence.py`** workflow (policy-validated full argv, captured exit code, git-derived HEAD + committed-tree digest) and creates all 14 records — verified, or matrix-permitted N/A bound to the canonical profile in committed `.solo/project.md` (the seven mandatory categories are never N/A) — against FINAL_SHA. These are unsigned, self-attested local evidence records: the checker validates their content and checkout binding, but the copyable `recorder` label cannot prove which process authored conforming JSON. Phase 16's gate then runs `check_evidence.py`, which derives HEAD and the committed profile itself and rejects any record whose commit, committed-tree digest, or N/A profile binding differs, so early, stale, or caller-selected records block the launch gate, by design.
+**Evidence lifecycle (records come LAST, all at once):** specialists produce raw artifacts (`.solo/*.md`, code, tests, plans, docs) as they work — they do **not** write `.solo/gate-evidence/` records, because a record created against an intermediate commit is invalid by construction. When everything is final and committed (FINAL_SHA recorded via `update_run_state.py advance final` — the run-state-v1 contract, SHA derived from git by the helper, frozen once set — in UNTRACKED `.solo/run-state/<run_id>.json`, never in `.solo/handoff.md` or any other tracked file), the coordinator verifies the freeze and returns a structured human handoff. Only the user invokes `/gate:finalize-evidence`; that command previews every applicable `record_evidence.py` execution, waits for separate explicit confirmation, and then creates all 14 records — verified, or matrix-permitted N/A bound to the canonical profile in committed `.solo/project.md` — against FINAL_SHA. The coordinator verifies the resulting set but authors no record. These are unsigned, self-attested local evidence records: the checker validates their content and checkout binding, but the copyable `recorder` label cannot prove which process authored conforming JSON. Phase 16's gate then runs `check_evidence.py`, which derives HEAD and the committed profile itself and rejects any record whose commit, committed-tree digest, or N/A profile binding differs, so early, stale, or caller-selected records block the launch gate, by design.
 
-Between phases: report progress (phase n/16), what was produced, the N/A list with evidence, and the next command. Resume-aware — if `.solo/` shows earlier phases done, continue from where the flow stopped. This flow exercises **all 17 component plugins directly**: solo, stack, repo, project, spec, design, git, dev, ai (`/ai:review-output` in phases 8 and 16), test, browser, security, site-doctor, growth, release, docs, and gate.
+Between phases: report progress (phase n/16), what was produced, the N/A list with evidence, and the next command. Resume-aware — if `.solo/` shows earlier phases done, continue from where the flow stopped. This flow exercises **all 17 component plugins directly**: solo, stack, repo, project, spec, design, git, dev, ai (`/ai:review-output` in phase 8), test, browser, security, site-doctor, growth, release, docs, and gate.
 
 ## Output
 End with the 7-part contract: **Summary · Findings/Work done · Risks · Required fixes · Suggested tasks** (→ `.solo/tasks.md`, stable T-IDs) **· Verification · Next command** (exact slash command).

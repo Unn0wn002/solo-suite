@@ -19,6 +19,8 @@ SAFETY CONTRACT (mandatory):
   file, never pasted into chat. Ensure .solo/config.md is in .gitignore (add it if missing).
 - DEFAULT IS DRY-RUN: show what would be created/updated (dashboard diff, annotation list)
   and make NO external write until the user explicitly confirms with --apply / "apply".
+- Present the dry run as a clear PREVIEW and require EXPLICIT CONFIRMATION before every
+  external write, even when credentials and a connector are already available.
 - Never include secrets, .solo/config.md, or .env values in dashboards or annotations.
 - Redact tokens and Authorization headers from all output, including errors. Report the dashboard UID/URL (or JSON) and annotations posted.
 Note: this reads "Grapify" as Grafana - if a different tool was meant, the same read->transform

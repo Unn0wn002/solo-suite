@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "growth",
   "displayName": "solo-suite growth",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Growth: audit the conversion funnel and find where users drop off and why. Skill: conversion-optimizer (delegates measurement to site-doctor analytics/forms). Command: /growth:conversion-audit.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

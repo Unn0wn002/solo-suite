@@ -5,6 +5,8 @@ description: Audit a Vercel project — build settings, environment variables, p
 
 # Vercel Audit
 
+**AgentRoom proposal mode:** preserve raw audit evidence in the seat's declared direct artifact. Any tasks, decisions, handoff, stack update, or other target listed under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries; never edit that target. Only the memory steward merges, and missing seat/run identity stops the write.
+
 Vercel makes deploying trivial, which means the risks move to configuration: a secret exposed to the browser through a `NEXT_PUBLIC_` var, preview deployments leaking production data or sitting unprotected, functions quietly hitting duration limits under load. This skill audits the Vercel-specific configuration and hands the general release/performance mechanics to site-doctor so the advice is consistent.
 
 ## Setup

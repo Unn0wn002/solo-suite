@@ -14,6 +14,30 @@ def read(*parts):
 
 
 class DocumentationTruth(unittest.TestCase):
+    def test_readme_full_solo_loop_is_complete_and_fenced(self):
+        readme = read("README.md")
+        fences = [line for line in readme.splitlines()
+                  if line.strip().startswith("```")]
+        self.assertEqual(len(fences) % 2, 0, "README has an unclosed fence")
+        self.assertIn("## A full solo loop", readme)
+        loop = readme.split("## A full solo loop", 1)[1]
+        for command in ("/stack:intake", "/gate:before-code",
+                        "/dev:implement-feature", "/gate:before-merge",
+                        "/gate:before-deploy", "/gate:production-ready"):
+            self.assertIn(command, loop)
+
+    def test_readme_vendor_audit_count_is_five(self):
+        readme = read("README.md")
+        self.assertIn("The five vendor audits", readme)
+        self.assertNotIn("The four vendor audits", readme)
+
+    def test_v1026_public_tag_binding_is_recorded(self):
+        record = read("release", "v1.0.26-tag-verification.md")
+        self.assertIn("`v1.0.26`", record)
+        self.assertIn("99eb54f9113a1dab279135024ced11dc88970ef5", record)
+        self.assertIn("releases/tag/v1.0.26", record)
+        self.assertNotIn("<40-hex", record)
+
     def test_full_team_does_not_invent_dependency_floors(self):
         with open(os.path.join(REPO, "plugins", "full-team",
                                ".claude-plugin", "plugin.json"),

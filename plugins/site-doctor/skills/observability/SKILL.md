@@ -5,6 +5,8 @@ description: Set up or audit production monitoring, logging, error tracking, ale
 
 # Observability
 
+**AgentRoom proposal mode:** write monitoring evidence only to declared direct targets. Tasks, decisions, handoff, or another target under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md`, never the target. Only the memory steward merges; missing seat/run identity is a stop condition.
+
 You can't fix what you can't see. The goal is to **know something is wrong before users tell you**, and to have enough signal to find the cause fast when it happens. Build in this order — each layer is worthless without the one before it: **logging → error tracking → uptime/health → metrics → alerts → dashboards**.
 
 Two failure modes to design against: **blind spots** (the outage nobody was paged for) and **alert fatigue** (so many alerts that the real one gets ignored). Everything below balances those two.

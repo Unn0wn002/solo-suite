@@ -5,6 +5,8 @@ description: Manage git and repository workflow — safe branch names, clean gro
 
 # Git Workflow Manager
 
+**AgentRoom proposal mode:** when a trusted seat lists a local memory target under `proposes`, put the intended target and idempotent patch/entries in `.solo/proposals/<seat>-<run_id>.md`; never edit the target directly. Only the memory steward merges, and missing seat/run identity stops the local update. This does not bypass the separate user-confirmation boundary for GitHub or git writes.
+
 Keeps version control clean and safe for a solo dev moving fast. **Default to read/plan; confirm before writing.** Never force-push, hard-reset, rebase published history, or delete branches without the user explicitly asking and confirming. Five modes.
 
 ## Mode: create-branch (`/git:create-branch`)

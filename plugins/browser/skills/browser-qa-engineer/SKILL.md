@@ -5,6 +5,8 @@ description: Real browser QA — exercise core flows, catch console/network/hydr
 
 # Browser QA Engineer
 
+**AgentRoom proposal mode:** keep browser evidence in the seat's declared direct artifact. Any task or other memory target listed under `proposes` must instead be described in `.solo/proposals/<seat>-<run_id>.md`; never edit that target. Only the memory steward merges, and missing seat/run identity is a stop condition.
+
 Unit tests pass and the page is still broken. This skill tests what the user actually experiences. **If a browser/automation tool (Playwright, a browser connector) is available, drive it and report real results; if not, produce an exact step-by-step manual script** (URLs, actions, and expected results) the user can run in minutes. Five modes.
 
 **Evidence per finding:** every finding carries a screenshot, a console/network paste, or an exact reproduction step — and manual-mode scripts say what to capture at each step. No evidence, no finding.

@@ -234,6 +234,10 @@ class FrontmatterAnchoring(unittest.TestCase):
             self.assertNotIn(k, self.sc.OFFICIAL_AGENT_KEYS, k)
             self.assertIn(k, self.sc.PLUGIN_AGENT_REJECTED_KEYS, k)
 
+    def test_suite_skill_frontmatter_contract_is_exact(self):
+        self.assertEqual(self.sc.SUITE_SKILL_KEYS, {"name", "description"})
+        self.assertIn("disable-model-invocation", self.sc.OFFICIAL_SKILL_KEYS)
+
     def test_shell_values_bash_powershell_only(self):
         self.assertEqual(self.sc.SKILL_FIELD_VALUES["shell"],
                          {"bash", "powershell"})
@@ -307,7 +311,7 @@ class AgentValidation(unittest.TestCase):
             self.assertTrue(any(key in x and "IGNORED" in x for x in fails),
                             (key, fails))
 
-    def test_shell_none_rejected_in_skill(self):
+    def test_skill_frontmatter_extra_key_is_rejected(self):
         tmp = tempfile.mkdtemp(prefix="skillcheck-")
         self.addCleanup(shutil.rmtree, tmp, True)
         os.makedirs(os.path.join(tmp, "skills", "s1"))
@@ -315,10 +319,10 @@ class AgentValidation(unittest.TestCase):
                   encoding="utf-8") as f:
             f.write("---\nname: s1\ndescription: d\nshell: none\n---\nB\n")
         fails = self._run_plugin(tmp)
-        self.assertTrue(any("shell" in x and "none" in x for x in fails),
-                        fails)
+        self.assertTrue(any("exactly name + description" in x and
+                            "shell" in x for x in fails), fails)
 
-    def test_shell_powershell_and_when_to_use_accepted(self):
+    def test_platform_supported_skill_keys_are_still_rejected_by_suite_policy(self):
         tmp = tempfile.mkdtemp(prefix="skillcheck-")
         self.addCleanup(shutil.rmtree, tmp, True)
         os.makedirs(os.path.join(tmp, "skills", "s2"))
@@ -327,8 +331,9 @@ class AgentValidation(unittest.TestCase):
             f.write("---\nname: s2\ndescription: d\nshell: powershell\n"
                     "when_to_use: when testing field acceptance\n---\nB\n")
         fails = self._run_plugin(tmp)
-        self.assertEqual([x for x in fails if "shell" in x
-                          or "when_to_use" in x], [], fails)
+        self.assertTrue(any("exactly name + description" in x and
+                            "shell" in x and "when_to_use" in x
+                            for x in fails), fails)
 
     def test_isolation_worktree_is_official(self):
         tmp = tempfile.mkdtemp(prefix="agentcheck-")

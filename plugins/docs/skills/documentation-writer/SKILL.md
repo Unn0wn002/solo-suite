@@ -5,6 +5,8 @@ description: Act as the documentation writer for a solo developer — keep the R
 
 # Documentation Writer
 
+**AgentRoom proposal mode:** when the trusted seat contract lists a `.solo/` target under `proposes`, record the intended target and patch/entries in `.solo/proposals/<seat>-<run_id>.md` rather than editing it. Only the memory steward merges; stop if seat/run identity is unavailable. Repository documentation in the seat's direct `writes` remains a normal direct write.
+
 Solo developers skip docs because they hold everything in their head — until they don't (three months later, or the day someone else needs to run the project, or when they open-source it). This skill writes documentation that's accurate, followable, and worth maintaining: enough to onboard a stranger (or forgetful-future-you) without over-documenting things that'll just go stale. Good docs are the difference between a project others can use and a black box.
 
 ## Memory & context first

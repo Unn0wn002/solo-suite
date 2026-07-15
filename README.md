@@ -48,7 +48,7 @@ This is [solo-team](#the-team-plugins) (nine roles that plan, design, build, tes
 - **`/stack:audit-tags`** — GTM install, GA4 firing once, conversions, consent mode, Meta/TikTok pixels, PII leakage, form & funnel tracking.
 - **`/stack:audit-payments`** — webhook security, payment status handling, duplicate-payment protection, refund flow, test vs live keys, exposed secret keys, checkout success/failure pages (Stripe, PayPal, Xendit, Midtrans, …).
 
-The four vendor audits are thin specialists: they own the vendor-specific checklist and delegate the deep mechanics to site-doctor's generic engines (`infrastructure-audit`, `deployment-review`, `security-review`, `database-audit`, `backup-recovery`, `analytics-audit`, `compliance-check`). If you have the **Cloudflare, Vercel, Supabase, or GitHub connectors**, the new **connector-auditor** skill pulls live configuration through them (read-only) so audits reflect reality instead of assumptions; without a connector it falls back to your local config files and says so.
+The five vendor audits are thin specialists: they own the vendor-specific checklist and delegate the deep mechanics to site-doctor's generic engines (`infrastructure-audit`, `deployment-review`, `security-review`, `database-audit`, `backup-recovery`, `analytics-audit`, `compliance-check`). If you have the **Cloudflare, Vercel, Supabase, or GitHub connectors**, the **connector-auditor** skill pulls live configuration through them (read-only) so audits reflect reality instead of assumptions; payments and tag platforms use their own provider/manual evidence paths. Without a connector, every audit falls back to local configuration evidence and says so.
 
 Skills fire **automatically** on matching requests; the slash commands are explicit shortcuts.
 
@@ -150,8 +150,8 @@ the GNU `find`, `cmp`, and `sha256sum` options used below.
 
 ```bash
 set -euo pipefail
-TAG=v1.0.26
-BASELINE=v1.0.25
+TAG=v1.0.27
+BASELINE=v1.0.26
 CANONICAL_REPO="$(gh api repos/unn0wn002/solo-suite --jq .full_name)"
 CERT_ID="https://github.com/${CANONICAL_REPO}/.github/workflows/ci.yml@refs/tags/${TAG}"
 ISSUER="https://token.actions.githubusercontent.com"
@@ -393,4 +393,27 @@ Each skill still works standalone if its counterparts aren't installed — it do
 /stack:intake           → record your tools                   (writes stack.md)
 /project:prd            → spec it, scoped to an MVP            (writes prd.md)
 /project:architecture   → design the build                    (writes architecture.md)
-/design:ux-flow
+/spec:api-contract      → lock the API boundary               (writes api-contract.md)
+/design:ux-flow         → map flows, states, and components   (writes design.md)
+/project:task-breakdown → produce ordered, testable work      (writes tasks.md)
+/gate:before-code       → GO/NO-GO before implementation
+/dev:implement-feature  → build one accepted task             (code + tests)
+/dev:code-review        → independent correctness review
+/test:unit              → verify units and edge behavior      (writes tests.md)
+/test:integration       → verify boundaries and persistence   (writes tests.md)
+/test:e2e               → verify critical user journeys       (writes tests.md)
+/browser:visual-check   → collect read-only browser evidence  (writes bugs.md)
+/security:threat-model  → record security and authz risks     (writes risks.md)
+/site-doctor:full-checkup → audit the integrated application
+/stack:audit-*          → run only vendors recorded in stack.md
+/gate:before-merge      → GO/NO-GO before release work
+/release:preflight      → verify deploy prerequisites
+/release:rollback-plan  → make the release reversible         (writes release.md)
+/gate:before-deploy     → GO/NO-GO before launch
+/docs:update            → align documentation with reality
+/solo:handoff-memory    → merge proposals and freeze memory
+USER: /gate:finalize-evidence → preview, approve, then mint FINAL_SHA evidence
+/gate:production-ready  → BLOCKED / SAFE WITH WARNINGS / SAFE TO LAUNCH
+```
+
+The state-changing browser, database, migration, secret-remediation, sync, and evidence-finalization commands stop at their documented human approval boundary. AgentRooms may prepare their inputs and verify their outputs, but never cross that boundary on the user's behalf.

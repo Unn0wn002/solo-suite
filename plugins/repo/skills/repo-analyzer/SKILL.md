@@ -5,6 +5,8 @@ description: Understand a whole codebase before editing it. Use for mapping stru
 
 # Repo Analyzer
 
+**AgentRoom proposal mode:** this role remains read-only over the repository. Any memory finding/task/decision whose target appears under the trusted seat's `proposes` goes to `.solo/proposals/<seat>-<run_id>.md`, with target and proposed entries, and never directly into the target. Only the memory steward merges; missing seat/run identity is a stop condition.
+
 Read before you write. This skill builds an accurate picture of the codebase so edits are safe and reviews are grounded. **Don't guess from filenames — open files, follow imports, and respect the framework's conventions.** Use any repo tooling that exists (package scripts, lockfiles, tsconfig, framework config) as ground truth. It has five modes.
 
 ## Mode: map (`/repo:map`)

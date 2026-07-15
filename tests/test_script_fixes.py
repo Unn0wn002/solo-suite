@@ -456,7 +456,9 @@ class ExtractMeta(unittest.TestCase):
             with contextlib.redirect_stdout(output):
                 rc = meta_mod.main()
         self.assertEqual(rc, 0, output.getvalue())
-        self.assertEqual(calls, ["https://target.example/"])
+        # A bare origin is canonically queued without the redundant root
+        # slash; the alternate-port URL must still never be fetched.
+        self.assertEqual(calls, ["https://target.example"])
 
 
 class ScanTrackers(unittest.TestCase):
@@ -498,6 +500,64 @@ class ScanTrackers(unittest.TestCase):
             result = trackers_mod.fetch("https://target.example/")
         self.assertIn("unrelated origin", result[3])
         self.assertFalse(result[2])
+
+    def test_output_redacts_url_cookie_origin_and_header_values(self):
+        secret_url = ("https://URLUSERSECRET:URLPASSWORD@target.example/SECRET_PATH"
+                      "?access_token=URLSECRET#SECRET_FRAGMENT")
+        cookies = [
+            "SECRET_COOKIE=COOKIE_VALUE; SameSite=SECRET_SAMESITE; "
+            "Expires=SECRET_DATE",
+            "MALFORMED_COOKIE_SECRET",
+        ]
+        html = ("<script src='https://ORIGINUSERSECRET:ORIGIN_PASSWORD@evil.example/"
+                "SECRET_RESOURCE?token=RESOURCE_SECRET'></script>")
+        fetched = (200, cookies, html, None, "https://target.example/")
+        with mock.patch.object(trackers_mod, "fetch", return_value=fetched):
+            out = capture(trackers_mod.main, secret_url)
+        for secret in (
+                "URLUSERSECRET", "URLPASSWORD", "SECRET_PATH", "URLSECRET",
+                "SECRET_FRAGMENT", "SECRET_COOKIE", "COOKIE_VALUE",
+                "SECRET_SAMESITE", "SECRET_DATE", "MALFORMED_COOKIE_SECRET",
+                "ORIGINUSERSECRET", "ORIGIN_PASSWORD", "evil.example",
+                "SECRET_RESOURCE", "RESOURCE_SECRET"):
+            self.assertNotIn(secret, out)
+        self.assertIn("host-id=", out)
+        self.assertIn("query-fields=1", out)
+        self.assertIn("userinfo=present", out)
+        self.assertIn("cookie #1", out)
+        self.assertIn("samesite=invalid", out)
+        self.assertIn("persistent-expires", out)
+        self.assertIn("cookie #2 (malformed)", out)
+
+    def test_fetch_errors_never_echo_target_or_exception(self):
+        target = "https://target.example/?token=URLSECRET"
+        with mock.patch.object(trackers_mod, "safe_get",
+                               side_effect=RuntimeError("EXCEPTION_SECRET")):
+            out = capture(trackers_mod.fetch, target, detailed=True)
+        self.assertIn("details redacted", out)
+        self.assertNotIn("URLSECRET", out)
+        self.assertNotIn("EXCEPTION_SECRET", out)
+
+        with mock.patch.object(
+                trackers_mod, "safe_get",
+                side_effect=trackers_mod.BlockedUrlError("BLOCKED_SECRET")):
+            out = capture(trackers_mod.fetch, target, detailed=True)
+        self.assertIn("details redacted", out)
+        self.assertNotIn("URLSECRET", out)
+        self.assertNotIn("BLOCKED_SECRET", out)
+
+    def test_redirect_problem_does_not_echo_destination(self):
+        headers = Message()
+        headers["Content-Type"] = "text/html; charset=utf-8"
+        response = SimpleNamespace(
+            status=200, headers=headers, body=b"<html></html>",
+            truncated=False,
+            url="https://elsewhere.example/?token=REDIRECT_SECRET")
+        with mock.patch.object(trackers_mod, "safe_get",
+                               return_value=response):
+            result = trackers_mod.fetch("https://target.example/")
+        self.assertEqual(result[3], "redirected to an unrelated origin")
+        self.assertNotIn("REDIRECT_SECRET", result[3])
 
         response.url = "https://target.example:8443/"
         with mock.patch.object(trackers_mod, "safe_get",

@@ -9,7 +9,7 @@ checker validates content against the current checkout; it does NOT verify
 cryptographic origin or attestations. A trusted CI identity/signature is the
 upgrade path.
 
-THE GATE CONTRACT (exit 0 only when ALL hold):
+THE CATEGORY-EVIDENCE CONTRACT (exit 0 only when ALL hold):
   * the checker DERIVES HEAD ITSELF (`git rev-parse HEAD` in --root).
     --commit is optional and, when given, must EXACTLY equal derived HEAD
     (usage error otherwise) — caller-provided commits are never trusted.
@@ -50,8 +50,11 @@ Usage:
         --profile <profile> [--commit <sha-that-must-equal-HEAD>]
         [--max-age-days 7] [--json]
 
-Exit 0 = complete and fully verified; 1 = any rejection, missing category,
-or unverifiable working state; 2 = usage error.
+Exit 0 = the 14-category record set is complete and verified to the limits of
+each captured command. It is necessary, NOT sufficient, for a launch verdict:
+the reviewer-required controls exposed in gate_policy.py still need separate
+cited evidence. Exit 1 = any rejection, missing category, or unverifiable
+working state; 2 = usage error.
 """
 import argparse
 import datetime
@@ -70,6 +73,7 @@ except ImportError:
 
 # re-exported so tests and siblings have one import point
 CATEGORIES = gp.CATEGORIES
+REVIEWER_REQUIRED_CONTROLS = gp.REVIEWER_REQUIRED_CONTROLS
 RECOGNIZED_PROFILES = gp.RECOGNIZED_PROFILES
 MANDATORY = gp.MANDATORY
 NA_ALLOWED = gp.NA_ALLOWED
@@ -120,9 +124,11 @@ def check_common(rec, head, environment, now, max_age_days, project):
         reasons.append("STALE: evidence expired at %s" % rec.get("expires"))
     if ts is not None:
         age = now - ts
-        if age.days > max_age_days:
-            reasons.append("STALE: evidence is %d days old (max %d)"
-                           % (age.days, max_age_days))
+        max_age = datetime.timedelta(days=max_age_days)
+        if age > max_age:
+            reasons.append("STALE: evidence is more than %d days old "
+                           "(exact %d-day freshness limit)"
+                           % (max_age_days, max_age_days))
         if age.total_seconds() < 0:
             reasons.append("timestamp is in the future")
     rv = rec.get("reviewer")
@@ -469,6 +475,10 @@ def main(argv=None, _test_now=None):
                           "verified_categories": verified_cats,
                           "na_categories": na_cats,
                           "applicable_categories": applicable,
+                          "scope": ("category-record evidence; necessary "
+                                    "but not sufficient for launch"),
+                          "reviewer_required_controls": sorted(
+                              REVIEWER_REQUIRED_CONTROLS),
                           "complete": ok, "results": results}, indent=2))
     else:
         for r in results:
@@ -481,6 +491,9 @@ def main(argv=None, _test_now=None):
               "= %d/14 categories accepted (%d applicable for scoring) =="
               % (head[:12], len(files), rejected, len(verified_cats),
                  len(na_cats), len(accepted), applicable))
+        print("SCOPE  14/14 verifies category records only; launch review "
+              "still requires separate evidence for: %s"
+              % ", ".join(sorted(REVIEWER_REQUIRED_CONTROLS)))
     return 0 if ok else 1
 
 

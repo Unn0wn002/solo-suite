@@ -14,6 +14,8 @@ SAFETY (Manual-only: submits forms (state-changing).) — per the browser-qa-eng
   accounts. No real payments, emails, SMS, webhooks, or destructive actions.
 - Confirm before any side-effecting submission; clean up created records afterward and
   record every side effect (attempted or completed) in the report.
+- STOP BEFORE THE FINAL submission and require explicit confirmation. DO NOT TRIGGER REAL
+  payments, emails, SMS, webhooks, account changes, or other production side effects.
 
 ## Output — evidence-based audit format
 Never just "good" or "bad" — every claim names its proof. If nothing was actually inspected for an area, say "not checked", don't guess. End with exactly:

@@ -9,6 +9,8 @@ Shipping is where a solo developer is most exposed — no ops team, no one on ca
 
 ## Memory & context first
 
+**AgentRoom proposal mode:** when a trusted room seat declares a memory target under `proposes`, replace every direct-write instruction with a proposal at `.solo/proposals/<seat>-<run_id>.md` naming the target and intended patch/entries. Only the steward merges; missing seat/run identity is a stop condition. Single-agent runs update memory directly.
+
 Read `.solo/tasks.md` (is the release scope actually done?), `architecture.md` (what's being deployed and where), `handoff.md`, and `decisions.md`. Note what shipped since last release. Write the plans/checklists into `.solo/` (e.g. a `release.md`, or append to `handoff.md`) and log release decisions in `decisions.md` so there's a record of what went out and how.
 
 ## Mode: preflight (`/release:preflight`)

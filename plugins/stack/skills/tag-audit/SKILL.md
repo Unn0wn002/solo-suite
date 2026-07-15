@@ -5,6 +5,8 @@ description: Audit a site's analytics tags and pixels — Google Tag Manager ins
 
 # Tag Audit
 
+**AgentRoom proposal mode:** preserve raw audit evidence in the seat's declared direct artifact. Any tasks, decisions, handoff, stack update, or other target listed under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries; never edit that target. Only the memory steward merges, and missing seat/run identity stops the write.
+
 Marketing tags are decision-making infrastructure that's usually quietly broken — GA4 double-counting because it's installed twice, conversions untracked, or pixels firing before consent and sending user emails into the URL. The result is wrong numbers *and* a privacy liability. This skill audits the tag/pixel layer specifically, leaning on site-doctor's `analytics-audit` (data quality) and `compliance-check` (consent, PII) for the deep mechanics.
 
 ## Setup
