@@ -152,17 +152,49 @@
             }
           },
           "proposes": {
-            "description": "Shared-memory artifacts this seat submits as proposals; only the memory steward merges them into the real files.",
+            "description": "Shared-memory artifacts this seat submits as proposals; only the memory steward merges them into the real files. Read-only seats return an exact structured payload for the trusted runner to materialize verbatim.",
             "type": "array",
             "items": {
               "type": "string"
             }
           },
           "commands": {
+            "description": "Commands the runner may assign to this agent seat. Manual-only commands must never appear here; use the structured human_handoff contract instead.",
             "type": "array",
             "items": {
               "type": "string",
               "pattern": "^/[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$"
+            }
+          },
+          "human_handoff": {
+            "description": "A manual-only command returned to the user rather than assigned to the agent. The runner pauses after presenting the command preview and resumes only after the user confirms and executes it successfully.",
+            "type": "object",
+            "required": [
+              "command",
+              "executor",
+              "preview_required",
+              "confirmation_required",
+              "resume_on"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "command": {
+                "type": "string",
+                "pattern": "^/[a-z][a-z0-9-]*:[a-z][a-z0-9-]*$"
+              },
+              "executor": {
+                "const": "user"
+              },
+              "preview_required": {
+                "const": true
+              },
+              "confirmation_required": {
+                "const": true
+              },
+              "resume_on": {
+                "type": "string",
+                "minLength": 1
+              }
             }
           },
           "deliverable": {

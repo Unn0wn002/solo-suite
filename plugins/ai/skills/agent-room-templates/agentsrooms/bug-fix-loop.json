@@ -1,7 +1,7 @@
 {
   "schema": "solo-suite/agentroom-v1",
   "name": "bug-fix-loop",
-  "version": 3,
+  "version": 4,
   "description": "Reproduce -> fix -> verify, looping (bounded) until the repro dies; before-merge gate receives review, security, test, and rollback evidence.",
   "memory_dir": ".solo/",
   "run": {
@@ -50,13 +50,14 @@
       ],
       "writes": [
         ".solo/bugs.md",
-        ".solo/run-state/<run_id>.json"
+        ".solo/run-state/<run_id>.json",
+        ".solo/tasks.md"
       ],
       "agent": "room-bug-reproducer",
       "commands": [
         "/browser:console-errors"
       ],
-      "deliverable": "Commits the deterministic reproduction to .solo/bugs.md FIRST, then records BASE_SHA (git rev-parse HEAD) in untracked .solo/run-state/<run_id>.json (it NEVER asks for or checks out a fixer commit — no fixer exists yet)",
+      "deliverable": "Commits the deterministic reproduction to .solo/bugs.md FIRST, then invokes update_run_state.py --root . --run-id <run_id> advance base so the trusted helper derives BASE_SHA from git and atomically records it in untracked .solo/run-state/<run_id>.json; it NEVER types a caller-supplied SHA and NEVER asks for or checks out a fixer commit",
       "handoff_to": "fixer",
       "handoff_check": "/ai:handoff-check"
     },
@@ -73,7 +74,8 @@
         ".solo/decisions.md",
         ".solo/bugs.md",
         ".solo/risks.md",
-        ".solo/release.md"
+        ".solo/release.md",
+        ".solo/tasks.md"
       ],
       "workspace": "worktree:bugfix",
       "agent": "room-bug-fixer",
@@ -97,7 +99,8 @@
       ],
       "writes": [
         ".solo/tests.md",
-        ".solo/bugs.md"
+        ".solo/bugs.md",
+        ".solo/tasks.md"
       ],
       "agent": "room-qa-engineer",
       "commands": [
@@ -122,7 +125,8 @@
       ],
       "writes": [
         ".solo/tasks.md",
-        ".solo/risks.md"
+        ".solo/risks.md",
+        ".solo/decisions.md"
       ],
       "agent": "room-git-pr-manager",
       "agent_note": "the before-merge gate is the Git/PR manager's call; it also runs the code review commands",
@@ -160,7 +164,7 @@
   },
   "worktrees": {
     "base_sha": {
-      "recorded_by": "the reproducer COMMITS the reproduction (.solo/bugs.md) FIRST, then computes BASE_SHA = `git rev-parse HEAD` and writes it to UNTRACKED .solo/run-state/<run_id>.json — never into a tracked file (a commit cannot contain its own SHA)",
+      "recorded_by": "the reproducer COMMITS the reproduction (.solo/bugs.md) FIRST, then runs the gate plugin helper `update_run_state.py --root . --run-id <run_id> advance base`; the helper derives BASE_SHA from `git rev-parse HEAD`, enforces a clean tree, validates run-state-v1, and atomically writes UNTRACKED .solo/run-state/<run_id>.json — the reproducer never types or writes a caller-supplied SHA",
       "rule": "the fixer's worktree branches from the DEFAULT branch, not the parent session HEAD — the fixer first fast-forwards onto BASE_SHA (`git merge --ff-only <BASE_SHA>`, or rebases) and verifies `git merge-base --is-ancestor <BASE_SHA> HEAD` before touching code",
       "stored_in": ".solo/run-state/<run_id>.json"
     },

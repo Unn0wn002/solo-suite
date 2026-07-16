@@ -5,6 +5,8 @@ description: Run a comprehensive website health audit covering security headers,
 
 # Website Audit
 
+**AgentRoom proposal mode:** audit evidence stays in the seat's declared direct artifact. Tasks, decisions, handoff, or any other target declared under `proposes` must be written as `.solo/proposals/<seat>-<run_id>.md` with target and proposed entries, never directly to the target. Only the steward merges; missing seat/run identity is a stop condition.
+
 Produce a report the user can act on. Every finding needs three parts — **evidence** (what you observed), **impact** (why it matters), and **fix** (exactly what to change). A finding without a fix is noise.
 
 ## Before you start

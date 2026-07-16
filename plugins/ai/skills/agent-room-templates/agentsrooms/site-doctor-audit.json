@@ -1,8 +1,8 @@
 {
   "schema": "solo-suite/agentroom-v1",
   "name": "site-doctor-audit",
-  "version": 3,
-  "description": "Parallel site + vendor audit, then triage into a fix order. The triager is the memory steward: the parallel auditors submit shared-memory proposals (including the stack.md connector update); only the triager writes tasks/decisions/handoff/stack.",
+  "version": 4,
+  "description": "Parallel site + vendor audit, then triage into a fix order. The triager is the memory steward: the parallel auditors submit shared-memory proposals (including the stack.md connector update); only the triager writes tasks/decisions/handoff/stack/project.",
   "memory_dir": ".solo/",
   "run": {
     "id_prefix": "sda",
@@ -83,12 +83,19 @@
       ],
       "proposes": [
         ".solo/tasks.md",
-        ".solo/stack.md"
+        ".solo/stack.md",
+        ".solo/decisions.md",
+        ".solo/handoff.md"
       ],
       "agent": "room-site-doctor",
       "agent_note": "vendor auditing is the site-doctor agent pointed at the stack layer",
       "commands": [
-        "/stack:connector-check"
+        "/stack:connector-check",
+        "/stack:audit-vercel",
+        "/stack:audit-supabase",
+        "/stack:audit-cloudflare",
+        "/stack:audit-tags",
+        "/stack:audit-payments"
       ],
       "deliverable": "Connector tiers recorded (as a stack.md proposal the triager merges); vendor audits (/stack:audit-*) per stack.md with N/A reasons for the rest; risks in risks.md",
       "handoff_to": "triager",
@@ -109,7 +116,8 @@
         ".solo/decisions.md",
         ".solo/handoff.md",
         ".solo/stack.md",
-        ".solo/risks.md"
+        ".solo/risks.md",
+        ".solo/project.md"
       ],
       "agent": "room-memory-steward",
       "agent_note": "triage IS the steward's merge duty plus /gate:score-project scoring",

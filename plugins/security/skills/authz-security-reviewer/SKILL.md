@@ -5,6 +5,8 @@ description: Deep authorization review — roles, permissions, who-can-do-what, 
 
 # Authorization & RLS Reviewer
 
+**AgentRoom proposal mode:** write direct evidence only to targets in the trusted seat's `writes`. For any task, decision, handoff, or other target under `proposes`, create `.solo/proposals/<seat>-<run_id>.md` naming the target and proposed entries; never mutate the target. Only the memory steward merges; stop if seat/run identity is missing.
+
 Most real breaches are broken *authorization*, not broken auth. Authentication proves who you are; authorization decides what you may do — and it must be enforced on the server, never only in the UI. Two modes.
 
 ## Mode: authz-matrix (`/security:authz-matrix`)

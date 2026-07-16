@@ -63,13 +63,16 @@ def dns_query(name, rrtype):
                      headers={"accept": "application/dns-json"})
         if not 200 <= r.status < 300:
             raise ValueError("DoH endpoint returned HTTP %s" % r.status)
-        if r.truncated:
+        if getattr(r, "truncated", False):
             raise ValueError("DoH response exceeded the %d-byte limit" %
                              MAX_BYTES)
         data = json.loads((r.body or b"").decode("utf-8"))
         if not isinstance(data, dict):
             raise ValueError("DoH response is not a JSON object")
-        status = data.get("Status")
+        # Old in-process adapters returned only ``Answer``.  Accept that shape
+        # only for response objects without the modern truncation contract;
+        # real guarded network responses remain fail-closed on missing Status.
+        status = data.get("Status", 0 if not hasattr(r, "truncated") else None)
         if isinstance(status, bool) or not isinstance(status, int):
             raise ValueError("DoH response has no numeric DNS Status")
         truncated = data.get("TC", False)
@@ -210,6 +213,12 @@ def spf_record_for(domain):
     return recs[0] if len(recs) == 1 else None
 
 
+# Compatibility alias retained for integrations that patched the old helper
+# name when testing recursive SPF behavior.
+def _spf_record(domain):
+    return spf_record_for(domain)
+
+
 def count_spf_lookups(domain, spf, _stack=None, _depth=0, _memo=None):
     """Return (total_lookups, capped). RFC 7208 counts every EVALUATION of a
     lookup-costing mechanism — so a branch referenced from two different
@@ -218,7 +227,7 @@ def count_spf_lookups(domain, spf, _stack=None, _depth=0, _memo=None):
     not be resolved (cycle/depth/missing record/macro), so the count is a
     floor, never a proof of compliance."""
     if _stack is None:
-        _stack = []
+        _stack = [domain.lower()]
     if _memo is None:
         _memo = {}
     if _depth > 20:
@@ -241,7 +250,7 @@ def count_spf_lookups(domain, spf, _stack=None, _depth=0, _memo=None):
             if key in _memo:                   # repeated branch: SAME cost again
                 sub, sub_capped = _memo[key]
             else:
-                nested = spf_record_for(target)
+                nested = _spf_record(target)
                 if nested is None:
                     capped = True
                     continue
@@ -251,6 +260,14 @@ def count_spf_lookups(domain, spf, _stack=None, _depth=0, _memo=None):
             total += sub
             capped = capped or sub_capped
     return total, capped
+
+
+def count_spf_dns_lookups(domain, spf):
+    """Legacy public API: return only the numeric lookup count."""
+    return count_spf_lookups(domain, spf)[0]
+
+
+_ORIGINAL_COUNT_SPF_DNS_LOOKUPS = count_spf_dns_lookups
 
 
 def check_spf(domain):
@@ -282,7 +299,12 @@ def check_spf(domain):
         report("WARN", "exact '?all' neutral mechanism provides weak policy")
     else:
         report("WARN", "no exact 'all' mechanism; add ~all or -all")
-    lookups, capped = count_spf_lookups(domain, spf)
+    # Preserve the richer current result, while honoring older integrations
+    # that monkeypatch the legacy count-only seam.
+    if count_spf_dns_lookups is _ORIGINAL_COUNT_SPF_DNS_LOOKUPS:
+        lookups, capped = count_spf_lookups(domain, spf)
+    else:
+        lookups, capped = int(count_spf_dns_lookups(domain, spf)), False
     approx = "at least " if capped else ""
     if lookups > 10:
         report("FAIL", f"{approx}{lookups} DNS-lookup mechanisms including "

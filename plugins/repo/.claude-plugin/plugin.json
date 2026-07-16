@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "repo",
   "displayName": "solo-suite repo",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Repo intelligence: understand a codebase before editing it — structure map, risk map, dependency map, dead-code finder, and onboarding guide. Skill: repo-analyzer (read-only). Commands: /repo:map, /repo:risk-map, /repo:dependency-map, /repo:find-dead-code, /repo:onboarding.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

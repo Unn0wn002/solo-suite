@@ -5,6 +5,8 @@ description: Work safely with AI coding agents — sharpen vague prompts, check 
 
 # AI Output Auditor
 
+**AgentRoom proposal mode:** an audit finding destined for a memory target under the trusted seat's `proposes` goes to `.solo/proposals/<seat>-<run_id>.md`, with its target and proposed entry, never directly to that target. Only the memory steward merges; missing seat/run identity is a stop condition.
+
 Solo devs orchestrate multiple coding agents; this skill keeps that loop trustworthy. Five modes.
 
 ## Mode: prompt-improve (`/ai:prompt-improve`)

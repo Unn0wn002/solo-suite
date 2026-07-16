@@ -272,6 +272,24 @@ class BuilderCleanTree(unittest.TestCase):
                 self.assertFalse(os.path.exists(out))
                 self.assertEqual(os.listdir(parent), [])
 
+    def test_unreleased_remediation_plan_blocks_packaging(self):
+        self.write(build_release.UNRELEASED_REMEDIATION_PATH,
+                   json.dumps({
+                       "schema": "solo-suite/unreleased-remediation-v1",
+                       "base_release": "9.9.9",
+                       "target_release": "9.9.10",
+                   }).encode("utf-8"))
+        self.assertEqual(git(self.root, "add", "--all").returncode, 0)
+        committed = git(self.root, "commit", "-qm", "unreleased plan")
+        self.assertEqual(committed.returncode, 0, committed.stderr)
+        parent = tempfile.mkdtemp(prefix="release-unreleased-output-")
+        self.addCleanup(shutil.rmtree, parent, ignore_errors=True)
+        out = os.path.join(parent, "not-created")
+        self.assertEqual(build_release.main([
+            "--root", self.root, "--out", out]), 2)
+        self.assertFalse(os.path.exists(out))
+        self.assertEqual(os.listdir(parent), [])
+
     def test_ci_release_tag_shape_is_strict_before_git_tag_lookup(self):
         workflow = os.path.join(REPO, ".github", "workflows", "ci.yml")
         with open(workflow, encoding="utf-8") as stream:

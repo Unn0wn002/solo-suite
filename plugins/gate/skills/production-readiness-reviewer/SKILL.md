@@ -5,7 +5,9 @@ description: Score whether an app is actually ready for real users across 14 cat
 
 # Production Readiness Reviewer
 
-Answers one question honestly: **is this safe to put in front of real users?** It runs a fixed checklist, scores each section, and gives an overall verdict — but a **critical failure overrides the average**: secrets committed, no auth where auth is required, Supabase RLS off where it's needed, or no backup/rollback each force **BLOCKED** no matter how good everything else looks. Pull real signals from `.solo/` and the specialist plugins (don't assume an item passes just because it exists in the plan).
+**AgentRoom proposal mode:** raw/final evidence follows the evidence lifecycle, while any tracked memory target listed under the trusted seat's `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries. Never edit that target; only the memory steward merges, and missing seat/run identity stops the write. `/gate:production-ready` remains output-only after the freeze.
+
+Answers one question honestly: **is this safe to put in front of real users?** It runs a fixed checklist, scores each section, and gives an overall verdict — but a **critical failure overrides the average**. The 14 category records are a necessary machine-checked floor, not proof of every subcontrol: secrets, auth/RLS, error tracking, mobile/accessibility core flows, payments, transactional email, backup/restore, and rollback require separate evidence cited in the reviewer verdict. Missing or failed evidence for an applicable control forces **BLOCKED** no matter how good everything else looks. Pull real signals from `.solo/` and the specialist plugins (don't assume an item passes just because it exists in the plan or because its parent category has a record).
 
 ## The checklist
 
@@ -138,6 +140,29 @@ Launch Status: SAFE WITH WARNINGS
 - auth, Supabase RLS, payments, or transactional email **not verified** (claimed ≠ verified — each needs test evidence)
 - plus the structural criticals: secrets committed · no auth where needed · RLS off where needed · no backup/rollback
 
+### Machine boundary for hard blockers
+
+`check_evidence.py` verifies the 14 category records, their exact captured
+commands, artifacts, freshness, and checkout binding. Because one record runs
+one command, **14/14 is necessary but not sufficient for launch** and must not
+be presented as machine verification of every checklist item. The shared
+`gate_policy.REVIEWER_REQUIRED_CONTROLS` list names the controls outside that
+machine guarantee: committed-secret scanning, authentication, RLS/
+authorization, error tracking, mobile and accessibility core flows, payments,
+transactional email, backup/restore, and rollback.
+
+For every applicable item, the launch verdict must cite a separate artifact
+and the command or live test that generated it. Use real specialist evidence
+where available (`/browser:mobile-test`, `/site-doctor:a11y`,
+`/security:authz-matrix`, manual `/security:rls-test`,
+`/stack:audit-payments`, `/site-doctor:email-check`,
+`/site-doctor:backups`, `/release:rollback-plan`, and monitoring/security
+evidence), while respecting each command's stated limits: an audit or written
+plan is not proof of live behavior; email DNS is not delivery; a rollback plan
+is not a rollback drill. If the applicable behavior has no executable evidence,
+leave it **UNVERIFIED** and return **BLOCKED**. Human-explained subcontrol N/A
+does not become a machine-accepted category N/A record.
+
 Otherwise: **SAFE TO LAUNCH** when the normalized score ≥ 85 and no APPLICABLE category below 7; **SAFE WITH WARNINGS** when the normalized score ≥ 70, with every warning listed and explicitly accepted. Below 70 → **BLOCKED** with the ordered must-fix list to get out.
 
 **The only launch statuses are `BLOCKED`, `SAFE WITH WARNINGS`, and `SAFE TO LAUNCH`.** GO/NO-GO wording belongs to the before-code/before-merge/before-deploy gates, never to this one.
@@ -199,11 +224,11 @@ Produced record (evidence branch of the schema):
 
 1. Specialists produce their raw artifacts (`.solo/*.md`, code, tests, plans, docs) as they work. They do **not** write final category records — a record minted against an intermediate commit is invalid by construction.
 2. ALL tracked memory updates (tasks, decisions, risks, handoff) land first; then commit EVERYTHING — code, CI, release plans, documentation, project memory. That commit is **FINAL_SHA**, recorded with `scripts/update_run_state.py --root . --run-id <run_id> advance final` into the UNTRACKED `.solo/run-state/<run_id>.json` — the formal **run-state-v1** contract (`schema/run-state-v1.schema.json`; exact lowercase keys `schema`, `run_id`, `base_sha`, `integration_sha`, `final_sha`). The helper derives the SHA from `git rev-parse HEAD` itself, enforces monotonic transitions, freezes `final_sha` (never rewritten — a new freeze means a new run id), writes atomically, and validates against the schema. A commit cannot contain its own SHA, so tracked files are structurally impossible carriers.
-3. The **evidence finalizer** (`/gate:finalize-evidence`) verifies HEAD equals FINAL_SHA mechanically (`update_run_state.py … verify final` exits 0), then re-runs every applicable category command through `record_evidence.py` and writes all 14 records (verified, or matrix-permitted N/A via `record_evidence.py --not-applicable`) against FINAL_SHA.
+3. The **Evidence Finalization Coordinator** verifies HEAD equals FINAL_SHA mechanically (`update_run_state.py … verify final` exits 0), returns the exact human handoff, and pauses. Only the user invokes manual-only `/gate:finalize-evidence`; after its preview and separate explicit confirmation, that command re-runs every applicable category command through `record_evidence.py` and writes all 14 records (verified, or matrix-permitted N/A via `record_evidence.py --not-applicable`) against FINAL_SHA. The coordinator only verifies the resulting set.
 4. After FINAL_SHA nothing tracked may change — only untracked `.solo/gate-evidence/` and `.solo/run-state/` files may be created (gitignore both). The recorder and checker enforce this fail-closed (index vs HEAD including rename/copy sources AND destinations, working tree vs index, non-ignored untracked files; a git failure is never 'clean'), and the recorder re-checks HEAD and cleanliness AFTER each evidence command executes. The gatekeeper is OUTPUT-ONLY and the memory steward never runs after the finalizer.
 5. `/gate:production-ready` verifies the full set with `check_evidence.py`, which derives HEAD itself and requires every record's `commit` to equal it EXACTLY.
 
-**Completeness rules (enforced, not advisory):** the gate passes only when **every one of the 14 categories has EXACTLY ONE accepted record** — either a verified evidence record or a machine-readable **N/A record**. Duplicate records for a category are rejected. **No specialist phase ever writes a category record** — specialists produce raw artifacts and N/A candidates only, and the **evidence finalizer** mints all 14 records at FINAL_SHA via `/gate:finalize-evidence`. The specialist phases determine which raw artifact BACKS each category (product→PM, architecture→architect, design→designer, frontend→browser QA, backend→code review, database→DB engineer, security→security, testing→QA, performance/SEO/analytics→site doctor, deployment→release manager, monitoring→DevOps, documentation→docs), but a record minted against an intermediate commit is invalid by construction, so the records themselves come last, all at once.
+**Category-record completeness rules (enforced, not advisory):** the checker passes only when **every one of the 14 categories has EXACTLY ONE accepted record** — either a verified evidence record or a machine-readable **N/A record**. Duplicate records for a category are rejected. This is category-record completeness, not machine verification of the reviewer-required subcontrols above; those remain a separate, fail-closed condition for the launch verdict. **No specialist phase ever writes a category record** — specialists produce raw artifacts and N/A candidates only, and the **user-invoked evidence-finalization command** mints all 14 records at FINAL_SHA via `/gate:finalize-evidence`; the coordinator never invokes it or authors a record. The specialist phases determine which raw artifact BACKS each category (product→PM, architecture→architect, design→designer, frontend→browser QA, backend→code review, database→DB engineer, security→security, testing→QA, performance/SEO/analytics→site doctor, deployment→release manager, monitoring→DevOps, documentation→docs), but a record minted against an intermediate commit is invalid by construction, so the records themselves come last, all at once.
 
 **Verification rules:** every record is first validated STRICTLY against the bundled JSON Schema by a built-in evaluator (the `jsonschema` package is never required); verified records must then (a) carry `status: verified`, `recorder`, and `command_argv` (schema-required), (b) have `commit` EXACTLY equal to the HEAD the checker derives itself (`--commit` is optional and must match derived HEAD or the run is a usage error), (c) have `tree_digest` equal to the recomputed COMMITTED-tree digest at HEAD (from `git ls-tree`, excluding `.solo/gate-evidence/**`), (d) pass `command_argv` RE-VALIDATION against the shared category policy — including canonical executable identity: argv[0] is re-resolved through PATH/absolute-path rules and the recorded `resolved_executable` must equal it, with unresolvable or project-local executables rejected — plus the live-target binding and, for bound command ids (gh run view), the output binding re-checked from the hashed artifact, (e) match the **target environment** and **project**, (f) be **unexpired** (default max age 7 days), (g) report the **captured** `exit_code` 0, (h) name a **non-empty reviewer**, and (i) name an artifact **inside the project root** whose **recomputed SHA-256** equals `artifact_sha256`. The checker also fails the whole gate when the working tree is dirty outside the two generated runtime dirs (ONLY `.solo/gate-evidence/` and `.solo/run-state/` are excluded) or when runtime-state files are tracked in HEAD.
 
@@ -244,7 +269,7 @@ An N/A record is accepted ONLY where this matrix permits it. **Product, Architec
  "reviewer": "gatekeeper", "expires": "2026-07-17T14:03:00Z"}
 ```
 
-Verify the full set mechanically with the bundled checker (exit 0 = complete and fully verified; categories with accepted N/A records leave the scoring denominator):
+Verify the full category-record set mechanically with the bundled checker (exit 0 = category-record complete and verified to each captured command's limits; it remains necessary but not sufficient for launch, and accepted N/A categories leave the scoring denominator):
 
 ```bash
 python3 "${CLAUDE_PLUGIN_ROOT}/skills/production-readiness-reviewer/scripts/check_evidence.py" .solo/gate-evidence \

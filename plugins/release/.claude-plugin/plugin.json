@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "release",
   "displayName": "solo-suite release",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Release for solo developers: pre-launch preflight, safe deploy plan, and rollback plan. DevOps-engineer and security-reviewer skills that drive site-doctor's infra/security/backup checks when installed.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

@@ -125,31 +125,39 @@ BUILDER_PAYLOAD_REQUIRED = {"worktree_path", "branch", "commit_sha",
 # is either an exact command or a prefix ending in '*'.
 IMPLICIT_WRITES = {
     "/site-doctor:*":       [".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
-    "/stack:audit-*":       [".solo/tasks.md"],
-    "/stack:connector-check": [".solo/stack.md", ".solo/tasks.md"],
-    "/stack:intake":        [".solo/stack.md"],
-    "/project:prd":         [".solo/prd.md"],
-    "/project:architecture": [".solo/architecture.md"],
+    "/stack:audit-*":       [".solo/tasks.md", ".solo/handoff.md"],
+    "/stack:connector-check": [".solo/stack.md", ".solo/tasks.md", ".solo/decisions.md"],
+    "/stack:intake":        [".solo/stack.md", ".solo/decisions.md"],
+    "/project:prd":         [".solo/prd.md", ".solo/decisions.md"],
+    "/project:architecture": [".solo/architecture.md", ".solo/decisions.md"],
     "/project:task-breakdown": [".solo/tasks.md"],
     "/spec:feature-brief":  [".solo/prd.md"],
     "/spec:acceptance":     [".solo/prd.md"],
     "/spec:api-contract":   [".solo/api-contract.md"],
     "/spec:data-contract":  [".solo/data-contract.md"],
     "/spec:env-contract":   [".solo/env-contract.md"],
-    "/design:*":            [".solo/design.md"],
-    "/dev:implement-feature": [".solo/decisions.md"],
-    "/dev:fix-bug":         [".solo/decisions.md"],
-    "/dev:refactor-code":   [".solo/decisions.md"],
-    "/dev:code-review":     [".solo/tasks.md"],
-    "/test:*":              [".solo/tests.md"],
-    "/browser:*":           [".solo/bugs.md"],
-    "/security:*":          [".solo/risks.md"],
-    "/release:preflight":   [".solo/release.md"],
-    "/release:deploy-plan": [".solo/release.md"],
-    "/release:rollback-plan": [".solo/release.md"],
-    "/gate:*":              [".solo/risks.md"],
+    "/design:*":            [".solo/design.md", ".solo/decisions.md"],
+    "/dev:implement-feature": [".solo/tasks.md", ".solo/decisions.md"],
+    "/dev:fix-bug":         [".solo/tasks.md", ".solo/decisions.md"],
+    "/dev:refactor-code":   [".solo/tasks.md", ".solo/decisions.md"],
+    "/dev:code-review":     [".solo/tasks.md", ".solo/decisions.md"],
+    "/test:*":              [".solo/tests.md", ".solo/tasks.md"],
+    "/browser:*":           [".solo/bugs.md", ".solo/tasks.md"],
+    "/security:abuse-cases": [".solo/risks.md", ".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/security:authz-matrix": [".solo/risks.md", ".solo/tasks.md", ".solo/decisions.md"],
+    "/security:threat-model": [".solo/risks.md", ".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/release:ci-setup":    [".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/release:preflight":   [".solo/release.md", ".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/release:deploy-plan": [".solo/release.md", ".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/release:rollback-plan": [".solo/release.md", ".solo/tasks.md", ".solo/decisions.md", ".solo/handoff.md"],
+    "/gate:before-code":    [".solo/risks.md", ".solo/tasks.md"],
+    "/gate:before-merge":   [".solo/risks.md", ".solo/tasks.md"],
+    "/gate:before-deploy":  [".solo/risks.md", ".solo/tasks.md"],
+    "/gate:score-project":  [".solo/project.md", ".solo/risks.md", ".solo/tasks.md", ".solo/decisions.md"],
     "/git:sync-issues":     [".solo/tasks.md"],
     "/growth:*":            [".solo/tasks.md"],
+    "/repo:*":              [".solo/tasks.md", ".solo/decisions.md"],
+    "/docs:*":              [".solo/handoff.md"],
     "/ai:review-output":    [".solo/tasks.md"],
     "/solo:handoff-memory": [".solo/handoff.md"],
     "/solo:end-session":    [".solo/handoff.md", ".solo/tasks.md"],
@@ -385,6 +393,31 @@ def known_commands(suite_root):
     return cmds or None
 
 
+def manual_only_commands(suite_root):
+    """Return commands disabled for model invocation by their metadata.
+
+    The command frontmatter is the policy source of truth; keeping a second
+    hard-coded denylist here would drift as commands are added or reclassified.
+    """
+    if not suite_root:
+        return None
+    commands = set()
+    for p in glob.glob(os.path.join(suite_root, "plugins", "*", "commands",
+                                    "*.md")):
+        with open(p, encoding="utf-8") as f:
+            text = f.read()
+        if not text.startswith("---"):
+            continue
+        parts = text.split("---", 2)
+        frontmatter = parts[1] if len(parts) >= 3 else ""
+        if re.search(r"(?mi)^disable-model-invocation\s*:\s*true\s*$",
+                     frontmatter):
+            norm = p.replace(os.sep, "/")
+            commands.add("/%s:%s" % (norm.split("/")[-3],
+                                      os.path.basename(p)[:-3]))
+    return commands
+
+
 def handoff_targets(seat):
     """handoff_to as a list: string -> [s], null -> [], list -> list."""
     tgt = seat.get("handoff_to")
@@ -446,7 +479,8 @@ def normalize_stages(data, bad):
 # semantic validation (step 2)
 # ===========================================================================
 def validate_room(data, label, known=None, known_agents_set=None,
-                  schema=None, agent_isolation_map=None):
+                  schema=None, agent_isolation_map=None,
+                  manual_commands_set=None):
     problems = []
 
     def bad(msg):
@@ -726,11 +760,14 @@ def validate_room(data, label, known=None, known_agents_set=None,
         declared = set(s.get("writes") or [])
         proposed = set(s.get("proposes") or [])
         implicit = implicit_writes_of(s.get("commands"))
-        eff[sid] = declared | implicit
+        # An implicit effect declared under `proposes` is written to a
+        # proposal payload for the steward; it is not a direct write to the
+        # target artifact and therefore cannot collide as a same-stage writer.
+        eff[sid] = declared | (implicit - proposed)
         undeclared = implicit - declared - proposed
         if sid == steward_id:
-            undeclared = set()  # the steward owns its files by definition
-        if steward_cfg is not None and undeclared:
+            undeclared -= steward_owns  # ownership is an explicit declaration
+        if undeclared:
             steward_part = sorted(undeclared & steward_owns)
             other_part = sorted(undeclared - steward_owns)
             if steward_part:
@@ -740,6 +777,15 @@ def validate_room(data, label, known=None, known_agents_set=None,
             if other_part:
                 bad("seat %r: commands implicitly write %s — declare under "
                     "'writes'" % (sid, other_part))
+        if proposed:
+            if steward_cfg is None:
+                bad("seat %r declares proposals %s but the room has no "
+                    "memory_steward to merge them" % (sid, sorted(proposed)))
+            else:
+                unowned_proposals = sorted(proposed - steward_owns)
+                if unowned_proposals:
+                    bad("seat %r proposes %s but the memory steward does not "
+                        "own those targets" % (sid, unowned_proposals))
         if steward_id is not None and sid != steward_id:
             direct_owned = declared & steward_owns
             if direct_owned:
@@ -1253,11 +1299,24 @@ def validate_room(data, label, known=None, known_agents_set=None,
                         "agent_note is documentation, not an executable "
                         "seat; map the finalizer to a shipped room agent "
                         "(room-evidence-finalizer)" % fin_id)
-                if not (isinstance(fin.get("commands"), list)
-                        and fin.get("commands")):
-                    bad("evidence.finalizer %r has NO commands — an "
-                        "evidence producer with nothing to execute cannot "
-                        "produce evidence" % fin_id)
+                fin_commands = fin.get("commands")
+                handoff = fin.get("human_handoff")
+                has_manual_finalize = (
+                    isinstance(handoff, dict)
+                    and handoff.get("command") == "/gate:finalize-evidence"
+                    and handoff.get("executor") == "user"
+                    and handoff.get("preview_required") is True
+                    and handoff.get("confirmation_required") is True
+                    and isinstance(handoff.get("resume_on"), str)
+                    and handoff.get("resume_on").strip())
+                if fin_commands != []:
+                    bad("evidence.finalizer %r must have commands: [] — it "
+                        "coordinates the user-only manual finalization and "
+                        "must never execute a command itself" % fin_id)
+                if not has_manual_finalize:
+                    bad("evidence.finalizer %r lacks the required user-only "
+                        "/gate:finalize-evidence human_handoff contract"
+                        % fin_id)
                 if fin.get("applies_to"):
                     bad("evidence.finalizer %r must run for EVERY profile "
                         "(remove applies_to)" % fin_id)
@@ -1393,18 +1452,39 @@ def validate_room(data, label, known=None, known_agents_set=None,
                 if offending:
                     bad("seat %r writes/proposes %s — final category "
                         "records against intermediate commits are invalid; "
-                        "only the evidence finalizer mints records, at "
-                        "FINAL_SHA" % (sid, sorted(offending)))
+                        "only the declared finalizer stage may carry records "
+                        "created by the user-invoked command at FINAL_SHA"
+                        % (sid, sorted(offending)))
     elif ev is not None:
         bad("'evidence' lifecycle block declared but the exit gate is not "
             "/gate:production-ready")
 
-    # ---- command refs ------------------------------------------------------
+    # ---- command refs + manual-only execution boundary --------------------
     refs = []
     for s in seats:
-        refs += [(s.get("id", "?"), c) for c in (s.get("commands") or [])]
+        sid = s.get("id", "?")
+        seat_commands = s.get("commands") or []
+        refs += [(sid, c) for c in seat_commands]
+        if manual_commands_set is not None:
+            for c in seat_commands:
+                if c in manual_commands_set:
+                    bad("seat %r executes manual-only command %s — move it "
+                        "to a structured human_handoff with executor 'user'"
+                        % (sid, c))
+        handoff = s.get("human_handoff")
+        if isinstance(handoff, dict):
+            hc = handoff.get("command")
+            refs.append(("%s human_handoff" % sid, hc))
+            if hc in seat_commands:
+                bad("seat %r lists human_handoff command %s in executable "
+                    "commands" % (sid, hc))
+            if manual_commands_set is not None \
+                    and hc not in manual_commands_set:
+                bad("seat %r human_handoff command %s is not marked "
+                    "disable-model-invocation: true in its own frontmatter"
+                    % (sid, hc))
         if s.get("handoff_check") is not None:
-            refs.append((s.get("id", "?"), s.get("handoff_check")))
+            refs.append((sid, s.get("handoff_check")))
     if isinstance(gate, str):
         refs.append(("exit_gate", gate))
     for who, c in refs:
@@ -1445,6 +1525,7 @@ def validate_room(data, label, known=None, known_agents_set=None,
 
 def validate_files(paths, suite_root=None, schema_path=None):
     known = known_commands(suite_root)
+    manual = manual_only_commands(suite_root)
     agents = known_agents(suite_root)
     iso = agent_isolation(suite_root)
     try:
@@ -1468,7 +1549,8 @@ def validate_files(paths, suite_root=None, schema_path=None):
         try:
             problems += validate_room(data, label, known,
                                       known_agents_set=agents, schema=schema,
-                                      agent_isolation_map=iso)
+                                      agent_isolation_map=iso,
+                                      manual_commands_set=manual)
         except Exception as e:   # contract: errors, never crashes
             problems.append("%s: internal validator error (%s: %s) — "
                             "please report" % (label, type(e).__name__, e))

@@ -47,7 +47,9 @@ def base_room():
         "run": {"id_prefix": "t", "id_required": True},
         "stages": [["a"], ["b"]],
         "seats": [seat("a", "b", ["x.md"]),
-                  seat("b", None, ["y.md"], ["/gate:before-code"])],
+                  seat("b", None, ["y.md", ".solo/risks.md",
+                                    ".solo/tasks.md"],
+                       ["/gate:before-code"])],
         "exit_gate": "/gate:before-code",
         "exit_criteria": "done",
     }
@@ -115,14 +117,18 @@ class Rules(unittest.TestCase):
         r["seats"] = [seat("a", ["b", "c"], ["x.md"]),
                       seat("b", "d", [".solo/y.md"]),
                       seat("c", "d", [".solo/c.md"]),
-                      seat("d", None, ["z.md"], ["/gate:before-code"])]
+                      seat("d", None,
+                           ["z.md", ".solo/risks.md", ".solo/tasks.md"],
+                           ["/gate:before-code"])]
         self.assertEqual(vr.validate_room(r, "t.json"), [])
 
     def test_duplicate_writer_same_stage(self):
         r = base_room()
         r["stages"] = [["a", "b"], ["c"]]
         r["seats"] = [seat("a", "c", ["x.md"]), seat("b", "c", ["x.md"]),
-                      seat("c", None, ["z.md"], ["/gate:before-code"])]
+                      seat("c", None, ["z.md", ".solo/risks.md",
+                                        ".solo/tasks.md"],
+                           ["/gate:before-code"])]
         self.check(r, "one writer per artifact")
 
     def test_null_gate_needs_note(self):
@@ -343,7 +349,7 @@ class NewRules(unittest.TestCase):
         r["stages"] = [["a", "b"], ["c"]]
         r["seats"] = [seat("a", "c", []), seat("b", "c", []),
                       seat("c", None, [".solo/tasks.md", ".solo/decisions.md",
-                                       ".solo/handoff.md"],
+                                       ".solo/handoff.md", ".solo/risks.md"],
                            ["/gate:before-code"])]
         r["memory_steward"] = {"seat": "c",
                                "owns": [".solo/tasks.md", ".solo/decisions.md",
@@ -364,10 +370,85 @@ class NewRules(unittest.TestCase):
         problems = vr.validate_room(r, "t.json")
         self.assertEqual([p for p in problems if "implicitly" in p], [])
 
+    def test_implement_feature_models_tasks_and_decisions(self):
+        self.assertEqual(
+            vr.implicit_writes_of(["/dev:implement-feature"]),
+            {".solo/tasks.md", ".solo/decisions.md"})
+
+    def test_representative_lifecycle_writes_are_complete(self):
+        expected = {
+            "/project:prd": {".solo/prd.md", ".solo/decisions.md"},
+            "/stack:connector-check": {
+                ".solo/stack.md", ".solo/tasks.md", ".solo/decisions.md"},
+            "/test:integration": {".solo/tests.md", ".solo/tasks.md"},
+            "/docs:update": {".solo/handoff.md"},
+            "/repo:risk-map": {".solo/tasks.md", ".solo/decisions.md"},
+            "/growth:conversion-audit": {".solo/tasks.md"},
+            "/gate:score-project": {
+                ".solo/project.md", ".solo/risks.md", ".solo/tasks.md",
+                ".solo/decisions.md"},
+            "/release:preflight": {
+                ".solo/release.md", ".solo/tasks.md", ".solo/decisions.md",
+                ".solo/handoff.md"},
+        }
+        for command, writes in expected.items():
+            with self.subTest(command=command):
+                self.assertEqual(vr.implicit_writes_of([command]), writes)
+
+    def test_nonstewarded_implicit_write_must_be_declared(self):
+        r = base_room()
+        r["seats"][0]["commands"] = ["/dev:implement-feature"]
+        self.check(r, "implicitly write")
+
+    def test_proposal_requires_a_steward(self):
+        r = base_room()
+        r["seats"][0]["proposes"] = [".solo/tasks.md"]
+        self.check(r, "no memory_steward")
+
+    def test_proposal_target_must_be_owned_by_steward(self):
+        r = self.steward_room()
+        r["seats"][0]["proposes"] = [".solo/project.md"]
+        self.check(r, "steward does not own")
+
+    def test_two_proposals_are_not_direct_write_collision(self):
+        r = self.steward_room()
+        for s in r["seats"][:2]:
+            s["commands"] = ["/growth:conversion-audit"]
+            s["proposes"] = [".solo/tasks.md"]
+        problems = vr.validate_room(r, "t.json")
+        self.assertEqual([p for p in problems
+                          if "one writer per artifact" in p], [])
+
     def test_direct_write_of_steward_file_rejected(self):
         r = self.steward_room()
         r["seats"][0]["writes"] = [".solo/tasks.md"]
         self.check(r, "use 'proposes'")
+
+    def test_manual_only_metadata_is_discovered(self):
+        manual = vr.manual_only_commands(REPO)
+        for command in ("/gate:finalize-evidence", "/security:secrets-fix",
+                        "/security:rls-test", "/browser:smoke-test",
+                        "/browser:form-submit-test"):
+            self.assertIn(command, manual)
+
+    def test_manual_only_command_cannot_be_a_seat_command(self):
+        r = base_room()
+        r["seats"][0]["commands"] = ["/gate:finalize-evidence"]
+        problems = vr.validate_room(
+            r, "t.json", manual_commands_set={"/gate:finalize-evidence"})
+        self.assertTrue(any("manual-only command" in p for p in problems),
+                        problems)
+
+    def test_manual_only_command_may_be_a_human_handoff(self):
+        r = base_room()
+        r["seats"][0]["commands"] = []
+        r["seats"][0]["human_handoff"] = {
+            "command": "/gate:finalize-evidence", "executor": "user",
+            "preview_required": True, "confirmation_required": True,
+            "resume_on": "successful completion"}
+        problems = vr.validate_room(
+            r, "t.json", manual_commands_set={"/gate:finalize-evidence"})
+        self.assertEqual([p for p in problems if "manual-only" in p], [])
 
     def test_simultaneous_implicit_writers_rejected(self):
         r = base_room()
@@ -704,6 +785,15 @@ class FullTeamTemplateAdversarial(unittest.TestCase):
         self.assertTrue(any("no real 'agent'" in p for p in problems),
                         problems)
 
+    def test_finalizer_is_coordination_only_with_empty_commands(self):
+        r = copy.deepcopy(self.ft)
+        for s in r["seats"]:
+            if s["id"] == "evidence_finalizer":
+                s["commands"] = ["/ai:handoff-check"]
+        problems = self.problems(r)
+        self.assertTrue(any("must have commands: []" in p
+                            for p in problems), problems)
+
     def test_finalizer_maps_to_shipped_room_evidence_finalizer(self):
         agents = vr.known_agents(REPO)
         self.assertIn("room-evidence-finalizer", agents)
@@ -883,8 +973,8 @@ class SemanticBypassesBothPaths(unittest.TestCase):
         r = copy.deepcopy(FT)
         for s in r["seats"]:
             if s["id"] == "evidence_finalizer":
-                s["commands"] = []
-        cases.append(("producer-without-commands", r, {}))
+                del s["human_handoff"]
+        cases.append(("finalizer-without-human-handoff", r, {}))
         r = copy.deepcopy(FT)
         for s in r["seats"]:
             if s["id"] == "evidence_finalizer":

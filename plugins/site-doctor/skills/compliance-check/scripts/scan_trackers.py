@@ -20,7 +20,8 @@ whose consent gating needs a real browser).
 import os
 import sys
 import re
-from urllib.parse import urlparse
+import hashlib
+from urllib.parse import urlparse, urldefrag
 from html.parser import HTMLParser
 
 sys.path.insert(0, os.path.normpath(os.path.join(
@@ -84,40 +85,158 @@ class SrcParser(HTMLParser):
         self._seen = set()
     def handle_starttag(self, tag, attrs):
         a = dict(attrs)
-        for attr in ("src", "href"):
+        tag = tag.lower()
+        attributes = []
+        if tag in ("script", "img", "iframe", "source", "video", "audio"):
+            attributes.append("src")
+        if tag == "link":
+            attributes.append("href")
+        if tag == "object":
+            attributes.append("data")
+        for attr in attributes:
             u = a.get(attr)
-            if u and u not in self._seen:
-                self._seen.add(u)
-                self.srcs.append(u)
+            normalized = urldefrag(u)[0] if u else ""
+            if normalized and normalized not in self._seen:
+                self._seen.add(normalized)
+                self.srcs.append(normalized)
 
 
-def fetch(url):
+def parse_cookie_header(value):
+    """Return a legacy structured cookie list without substring matching."""
+    segments = [segment.strip() for segment in (value or "").split(";")]
+    first = segments[0] if segments else ""
+    name, separator, cookie_value = first.partition("=")
+    attributes = {}
+    for segment in segments[1:]:
+        key, _separator, item_value = segment.partition("=")
+        if key.strip():
+            attributes[key.strip().lower()] = item_value.strip()
+    flags = [name for name in ("secure", "httponly", "samesite")
+             if name in attributes]
+    return [{
+        "name": name.strip(),
+        "value": cookie_value if separator else "",
+        "flags": flags,
+        "attributes": attributes,
+        "malformed": not bool(separator and name.strip()),
+    }]
+
+
+def _host_id(host):
+    """Return a stable, non-raw identifier for an untrusted hostname."""
+    if not host:
+        return "missing"
+    return hashlib.sha256(host.encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def describe_url(value):
+    """Describe URL structure without echoing attacker-controlled values.
+
+    URLs can carry credentials in userinfo, query strings, fragments, paths,
+    and even host labels.  Audit output therefore exposes only fixed-shape
+    classifications and a stable hostname fingerprint.
+    """
+    try:
+        parsed = urlparse(value)
+        scheme = parsed.scheme.lower()
+        scheme = scheme if scheme in ("http", "https") else "other"
+        host = normalized_hostname(value)
+        try:
+            port = parsed.port
+        except ValueError:
+            port_kind = "invalid"
+        else:
+            default = 443 if scheme == "https" else 80 if scheme == "http" else None
+            port_kind = "default" if port in (None, default) else "custom"
+        query_count = len(parsed.query.split("&")) if parsed.query else 0
+        return ("scheme=%s host-id=%s port=%s path=%s query-fields=%d "
+                "fragment=%s userinfo=%s" %
+                (scheme, _host_id(host), port_kind,
+                 "present" if parsed.path not in ("", "/") else "root",
+                 query_count, "present" if parsed.fragment else "absent",
+                 "present" if (parsed.username is not None or
+                                parsed.password is not None) else "absent"))
+    except Exception:
+        return ("scheme=invalid host-id=missing port=invalid path=unknown "
+                "query-fields=unknown fragment=unknown userinfo=unknown")
+
+
+def describe_origin(value):
+    """Return a non-raw structural label for a third-party resource URL."""
+    try:
+        parsed = urlparse(value)
+        scheme = parsed.scheme.lower()
+        scheme = scheme if scheme in ("http", "https") else "other"
+        host = normalized_hostname(value)
+        try:
+            port = parsed.port
+        except ValueError:
+            port_kind = "invalid"
+        else:
+            default = 443 if scheme == "https" else 80 if scheme == "http" else None
+            port_kind = "default" if port in (None, default) else "custom"
+        return "scheme=%s host-id=%s port=%s" % (
+            scheme, _host_id(host), port_kind)
+    except Exception:
+        return "scheme=invalid host-id=missing port=invalid"
+
+
+def cookie_summary(value):
+    """Return safe structural facts for one Set-Cookie header.
+
+    Cookie names, values, dates, and arbitrary attribute values are all
+    untrusted and may contain credentials.  Only fixed allowlist labels are
+    emitted.
+    """
+    parsed = parse_cookie_header(value)[0]
+    attrs = parsed["attributes"]
+    flags = [flag for flag in ("secure", "httponly") if flag in attrs]
+    if "samesite" in attrs:
+        same_site = attrs["samesite"].strip().lower()
+        flags.append("samesite=" + same_site
+                     if same_site in ("lax", "strict", "none")
+                     else "samesite=invalid")
+    if "max-age" in attrs:
+        lifetime = ("persistent-max-age" if
+                    attrs["max-age"].lstrip("-").isdigit() else
+                    "persistent-max-age-invalid")
+    elif "expires" in attrs:
+        lifetime = "persistent-expires"
+    else:
+        lifetime = "session"
+    return parsed["malformed"], flags, lifetime
+
+
+def fetch(url, detailed=None):
     try:
         r = safe_get(url, timeout=TIMEOUT, allow_http=True, max_bytes=MAX_BYTES,
                      headers={"User-Agent": UA})
+        legacy = detailed is False or (detailed is None and not hasattr(r, "truncated"))
+        def result(status, cookies, html, problem=None, final_url=None):
+            return ((status, cookies, html) if legacy else
+                    (status, cookies, html, problem, final_url))
         get_all = getattr(r.headers, "get_all", None)
         cookies = get_all("Set-Cookie") or [] if callable(get_all) else []
         final_url = getattr(r, "url", url)
         if not same_audit_origin(url, final_url, allow_http_upgrade=True):
-            return (r.status, cookies, "",
-                    "redirected to unrelated origin %s" % final_url,
-                    final_url)
+            return result(r.status, cookies, "",
+                          "redirected to an unrelated origin",
+                          final_url)
         if not 200 <= r.status < 300:
-            return r.status, cookies, "", "HTTP %s" % r.status, final_url
-        if r.truncated:
-            return (r.status, cookies, "",
-                    "response exceeded the %d-byte scan limit" % MAX_BYTES,
-                    final_url)
+            return result(r.status, cookies, "", "HTTP %s" % r.status, final_url)
+        if getattr(r, "truncated", False):
+            return result(r.status, cookies, "",
+                          "response exceeded the %d-byte scan limit" % MAX_BYTES,
+                          final_url)
         content_type = r.headers.get("Content-Type", "")
         ctype = content_type.split(";", 1)[0].strip().lower()
         if ctype not in ("text/html", "application/xhtml+xml"):
-            return (r.status, cookies, "",
-                    "response Content-Type %r is not HTML" %
-                    (ctype or "(missing)"), final_url)
+            return result(r.status, cookies, "",
+                          "response Content-Type is not HTML", final_url)
         body = r.body or b""
         if not body.strip():
-            return (r.status, cookies, "", "HTML response body is empty",
-                    final_url)
+            return result(r.status, cookies, "", "HTML response body is empty",
+                          final_url)
         charset = "utf-8"
         for parameter in content_type.split(";")[1:]:
             key, separator, value = parameter.partition("=")
@@ -128,20 +247,22 @@ def fetch(url):
                    "us-ascii": "ascii", "ascii": "ascii"}
         codec = aliases.get(charset)
         if codec is None:
-            return (r.status, cookies, "",
-                    "unsupported HTML charset %r" % charset, final_url)
+            return result(r.status, cookies, "",
+                          "unsupported HTML charset", final_url)
         try:
             html = body.decode(codec, "strict")
         except UnicodeDecodeError:
-            return (r.status, cookies, "",
-                    "HTML body is not valid %s" % charset, final_url)
-        return r.status, cookies, html, None, final_url
-    except BlockedUrlError as e:
-        print(f"BLOCKED unsafe target: {e}")
-        return None, [], "", "blocked unsafe target", None
-    except Exception as e:
-        print(f"Could not fetch {url}: {e}")
-        return None, [], "", "request failed", None
+            return result(r.status, cookies, "",
+                          "HTML body is not valid %s" % charset, final_url)
+        return result(r.status, cookies, html, None, final_url)
+    except BlockedUrlError:
+        print("BLOCKED unsafe target (details redacted)")
+        return ((None, [], "") if detailed is not True else
+                (None, [], "", "blocked unsafe target", None))
+    except Exception:
+        print("Could not fetch target (details redacted)")
+        return ((None, [], "") if detailed is not True else
+                (None, [], "", "request failed", None))
 
 
 def normalized_hostname(value):
@@ -182,11 +303,17 @@ def same_audit_origin(left, right, allow_http_upgrade=False):
 
 
 def main(url):
-    status, cookies, html, problem, final_url = fetch(url)
+    fetched = fetch(url, detailed=True)
+    if len(fetched) == 3:  # legacy/mock adapter
+        status, cookies, html = fetched
+        problem, final_url = None, url
+    else:
+        status, cookies, html, problem, final_url = fetched
     if status is None:
         print("RESULT: pass=0 warn=0 fail=0 unverified=1")
         return 2
-    print(f"=== Privacy/tracker scan: {url} (status {status}) ===\n")
+    print("=== Privacy/tracker scan: %s (status %s) ===\n" %
+          (describe_url(url), status))
     if problem:
         http_error = not 200 <= status < 300
         level = "ERROR" if http_error else "UNVERIFIED"
@@ -199,26 +326,14 @@ def main(url):
           "(these fire BEFORE any consent interaction):")
     if not cookies:
         print("  (none set via response headers — client JS may still set some)")
-    for c in cookies:
+    for index, c in enumerate(cookies, 1):
         # Structural parse: first segment is name=value; the rest are
-        # attributes. Substring matching would false-positive on cookie
-        # VALUES containing e.g. "secure".
-        segments = [seg.strip() for seg in c.split(";")]
-        name = segments[0].split("=", 1)[0].strip()
-        attrs = {}
-        for seg in segments[1:]:
-            k, _, v = seg.partition("=")
-            attrs[k.strip().lower()] = v.strip()
-        flags = [f for f in ("secure", "httponly", "samesite") if f in attrs]
-        if "samesite" in attrs and attrs["samesite"]:
-            flags[flags.index("samesite")] = f"samesite={attrs['samesite'].lower()}"
-        if "max-age" in attrs and attrs["max-age"].lstrip("-").isdigit():
-            life = f"max-age={attrs['max-age']}s"
-        elif "expires" in attrs:
-            life = f"expires={attrs['expires']}"
-        else:
-            life = "session"
-        print(f"  - {name}  [{', '.join(flags) or 'no flags'}]  {life}")
+        # attributes.  Neither the name/value nor arbitrary attributes are
+        # emitted: Set-Cookie is an attacker-controlled credential surface.
+        malformed, flags, life = cookie_summary(c)
+        marker = " (malformed)" if malformed else ""
+        print("  - cookie #%d%s  [%s]  %s" %
+              (index, marker, ", ".join(flags) or "no flags", life))
     print()
 
     # --- third-party origins & known trackers ---
@@ -226,8 +341,8 @@ def main(url):
     try:
         p.feed(html)
         p.close()
-    except Exception as e:
-        print(f"[UNVERIFIED] HTML parser failed: {e}; tracker coverage is "
+    except Exception:
+        print("[UNVERIFIED] HTML parser failed (details redacted); tracker coverage is "
               "not a pass")
         print("RESULT: pass=0 warn=0 fail=0 unverified=1")
         return 3
@@ -241,8 +356,9 @@ def main(url):
         src_host = normalized_hostname(netloc) if netloc else None
         if not src_host or same_audit_origin(final_url, src):
             continue
-        third_party.setdefault(netloc, 0)
-        third_party[netloc] += 1
+        origin = describe_origin(src)
+        third_party.setdefault(origin, 0)
+        third_party[origin] += 1
         for frag, label in KNOWN_TRACKERS.items():
             if frag in src.lower():
                 trackers_found[label] = trackers_found.get(label, 0) + 1
@@ -257,8 +373,8 @@ def main(url):
 
     print("All third-party origins referenced on load "
           "(each may receive user data such as IP/behavior):")
-    for netloc, n in sorted(third_party.items(), key=lambda x: -x[1])[:30]:
-        print(f"  - {netloc}  (x{n})")
+    for origin, n in sorted(third_party.items(), key=lambda x: -x[1])[:30]:
+        print(f"  - {origin}  (x{n})")
     print()
 
     # ---- structured verdict -------------------------------------------------

@@ -19,7 +19,7 @@ Worktree contract (room `worktrees` block): your worktree branches from the DEFA
 
 Work inside the solo-suite AgentRooms contract:
 - Read ONLY the `.solo/` files your seat declares in `reads` (plus `.solo/handoff.md`); never assume repo-wide context.
-- Write ONLY your seat's declared `writes`. Anything destined for a steward-owned shared file (`.solo/tasks.md`, `.solo/decisions.md`, `.solo/handoff.md` in stewarded rooms) is submitted as a PROPOSAL file `.solo/proposals/<seat>-<run_id>.md`, never written directly.
+- Write ONLY your seat's declared `writes`. Because this is a worktree seat, anything destined for steward-owned shared memory is encoded in the committed builder payload `.solo/proposals/<seat>-<run_id>.json`, never written to the real shared file; the integrator transports that exact commit and the steward merges it after integration.
 - Run the slash commands your seat lists, in order; obey every gate result — a NO-GO/BLOCKED stops you.
 - End with a handoff summary (what was produced, where, open risks, exact next command) suitable for /ai:handoff-check.
 - Evidence-based output only: every claim names the file, command output, or page that proves it; unverified areas are reported as "not checked".

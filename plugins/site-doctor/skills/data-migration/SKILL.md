@@ -1,12 +1,13 @@
 ---
 name: data-migration
 description: Plan and safely execute data migrations — moving data between databases or engines, large schema restructures, ETL/import jobs, splitting or merging tables, and backfills at scale — with validation, integrity checks, rollback, and zero-downtime cutover. Use whenever the user is migrating data, changing database engines (e.g. MySQL to Postgres), importing a large dataset, restructuring how data is stored, doing an ETL job, or asks how to move data safely without downtime or loss. Extends database-fix (which covers in-place schema changes) to full data moves.
-disable-model-invocation: true
 ---
 
 # Data Migration
 
 Moving data is where silent, permanent loss happens — a truncated import, a mis-mapped column, a cutover that drops writes made during the copy. The discipline is: **never destroy the source until the target is proven correct**, validate row-for-row, and make every step reversible. This extends `database-fix` (in-place schema changes) to full data moves between tables, databases, or engines.
+
+**Manual execution boundary:** planning, validation queries, and migration scripts may be prepared automatically, but no migration, cutover, bulk write, destructive statement, or external data transfer may execute until the user has reviewed the exact plan, target, restore point, and rollback path and explicitly approved that step. Stop at each state-changing boundary.
 
 ## Plan before touching data
 
@@ -69,6 +70,8 @@ Prove correctness before trusting the target:
 **Planning**: a step-by-step migration plan — mapping table, batch strategy, validation checks, cutover approach, and rollback at each stage. **Auditing a proposed migration**: flag the risks (unvalidated mapping, no rollback, big-bang cutover, encoding mismatch, source destroyed too early). Either way, the through-line is: source stays authoritative until the target is validated, every step is reversible, and correctness is proven with counts + checksums + spot checks, not assumed. Route in-place schema mechanics to database-fix and load concerns to database-debug.
 
 ## Project memory integration (solo-team)
+
+**AgentRoom proposal mode:** when a trusted seat lists any memory target below under `proposes`, write the intended target, patch/entries, evidence, and merge notes to `.solo/proposals/<seat>-<run_id>.md` instead of editing that target. Only the memory steward merges it; missing seat or run identity stops the write. Direct memory updates remain normal outside a stewarded room.
 
 If a `.solo/` directory exists at the project root — the solo-team suite's shared memory — read `handoff.md` and `tasks.md` for context before starting, so the work is grounded in the project's actual state. Afterward, persist the results: capture the prioritized fix list as tasks in `.solo/tasks.md` (stable T-IDs, Doing/Todo/Blocked/Done sections, per project-memory-manager's conventions), append significant findings, decisions, or accepted risks to `.solo/decisions.md`, and note what was run in `handoff.md`. This keeps results in persistent project memory instead of dying with the session, and lets `/solo:next-step` and `/release:preflight` see them. If `.solo/` doesn't exist, proceed normally (and optionally mention the solo plugin can add cross-session memory).
 

@@ -9,6 +9,8 @@ The solo developer's failure mode is rarely "can't build it" — it's building t
 
 ## Memory first
 
+**AgentRoom proposal mode:** a room seat that declares a target under `proposes` must write `.solo/proposals/<seat>-<run_id>.md` with the target and proposed content/diff, never edit that target directly. Only the memory steward merges it; stop if the room did not provide seat and run identity. Direct writes remain the normal single-agent behavior.
+
 If `.solo/` exists, read `prd.md` (are we updating or creating?), `tasks.md`, and `handoff.md` before doing anything. Write results back: the PRD to `.solo/prd.md`, task breakdowns to `.solo/tasks.md` (using project-memory-manager's format — stable T-numbers, Doing/Todo/Blocked/Done sections), and scope decisions appended to `.solo/decisions.md`. If `.solo/` doesn't exist, offer to initialize it (project-memory-manager).
 
 ## Mode: PRD (`/project:prd`)

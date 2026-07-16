@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "dev",
   "displayName": "solo-suite dev",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Development for solo developers: implement features, fix bugs by root cause, refactor safely, and review code. Full-stack-developer and code-reviewer skills. Routes deep DB/security/perf work to site-doctor.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

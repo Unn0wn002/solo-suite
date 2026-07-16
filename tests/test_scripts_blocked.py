@@ -133,7 +133,8 @@ class FixtureHappyPaths(unittest.TestCase):
         self.assertIn("Google Tag Manager", r.stdout)
         self.assertIn("[FAIL]", r.stdout)
         self.assertIn("RESULT: ", r.stdout)
-        self.assertIn("sid", r.stdout)
+        self.assertIn("cookie #1", r.stdout)
+        self.assertNotIn("sid", r.stdout)
 
     def test_scan_trackers_rejects_incomplete_coverage(self):
         cases = [

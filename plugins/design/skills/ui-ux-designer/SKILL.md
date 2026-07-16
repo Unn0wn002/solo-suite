@@ -9,6 +9,8 @@ Solo developers usually design by accident — screens accrete, patterns drift, 
 
 ## Memory first
 
+**AgentRoom proposal mode:** for every memory target declared under the trusted seat's `proposes`, write `.solo/proposals/<seat>-<run_id>.md` with the target and proposed patch/entries instead of editing the target. Only the memory steward merges; stop if seat/run identity is missing. Single-agent work keeps the direct-update behavior below.
+
 Read `.solo/prd.md` (design serves the user stories) and `architecture.md` (the data model shapes what screens are possible), plus `design.md` (updating or creating?) and `handoff.md`. Write to `.solo/design.md` and append design decisions to `.solo/decisions.md`.
 
 ## Mode: UX flow (`/design:ux-flow`)

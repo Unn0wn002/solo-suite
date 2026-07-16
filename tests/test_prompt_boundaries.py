@@ -73,6 +73,19 @@ class AgentRoomBoundaries(unittest.TestCase):
             tools = {x.strip() for x in fm["tools"].split(",")}
             self.assertFalse({"Edit", "Write"} & tools, name)
 
+    def test_read_only_proposal_seats_use_runner_transport(self):
+        runner = read(
+            "plugins/ai/skills/agent-room-templates/references/runner.md")
+        self.assertIn("trusted runner writes that exact returned payload",
+                      runner)
+        self.assertIn("must not infer, rewrite, or add content", runner)
+        for name in ("room-ai-agent-reviewer.md",
+                     "room-growth-reviewer.md",
+                     "room-repo-analyst.md"):
+            _, body = frontmatter(read("plugins/ai/agents/" + name))
+            self.assertIn("least-privilege read-only seat", body, name)
+            self.assertIn("runner materializes it verbatim", body, name)
+
     def test_runner_uses_canonical_source_labeled_envelope(self):
         contract = read(
             "plugins/ai/skills/agent-room-templates/references/"
@@ -110,6 +123,15 @@ class AgentRoomBoundaries(unittest.TestCase):
 
 
 class ManualOnlyBoundaries(unittest.TestCase):
+    def test_every_memory_integrated_skill_supports_proposal_mode(self):
+        paths = glob.glob(os.path.join(
+            REPO, "plugins", "*", "skills", "*", "SKILL.md"))
+        for path in paths:
+            with open(path, encoding="utf-8") as f:
+                text = f.read()
+            if "Project memory integration" in text:
+                self.assertIn("AgentRoom proposal mode", text, path)
+
     def test_live_security_commands_are_manual_only(self):
         for rel in ("plugins/security/commands/rls-test.md",
                     "plugins/site-doctor/commands/security-scan.md"):

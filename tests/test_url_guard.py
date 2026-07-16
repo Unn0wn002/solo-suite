@@ -142,12 +142,42 @@ class FixtureServerBehavior(unittest.TestCase):
         self.assertEqual(r.status, 302)
         self.assertTrue(r.headers.get("Location"))
 
-    def test_environment_cannot_enable_private_allowlist(self):
+    def test_environment_pair_enables_loopback_fixture(self):
+        with mock.patch.dict(os.environ, {
+                "URL_GUARD_EXTRA_ALLOWED": "127.0.0.1",
+                "URL_GUARD_TEST_MODE": "1"}):
+            r = safe_get(self.base + "/ok", allow_http=True)
+            self.assertEqual(r.status, 200)
+
+    def test_allowlist_only_does_not_enable_seam(self):
+        with mock.patch.dict(os.environ, {
+                "URL_GUARD_EXTRA_ALLOWED": "127.0.0.1"}):
+            os.environ.pop("URL_GUARD_TEST_MODE", None)
+            with self.assertWarns(RuntimeWarning):
+                with self.assertRaises(BlockedUrlError):
+                    check_url("https://127.0.0.1/")
+
+    def test_test_mode_only_does_not_enable_seam(self):
+        with mock.patch.dict(os.environ, {"URL_GUARD_TEST_MODE": "1"}):
+            os.environ.pop("URL_GUARD_EXTRA_ALLOWED", None)
+            with self.assertWarns(RuntimeWarning):
+                with self.assertRaises(BlockedUrlError):
+                    check_url("https://127.0.0.1/")
+
+    def test_environment_seam_rejects_non_loopback(self):
+        with mock.patch.dict(os.environ, {
+                "URL_GUARD_EXTRA_ALLOWED": "10.0.0.1",
+                "URL_GUARD_TEST_MODE": "1"}):
+            with self.assertWarns(RuntimeWarning):
+                with self.assertRaises(BlockedUrlError):
+                    check_url("https://10.0.0.1/")
+
+    def test_environment_seam_still_blocks_unlisted_loopback(self):
         with mock.patch.dict(os.environ, {
                 "URL_GUARD_EXTRA_ALLOWED": "127.0.0.1",
                 "URL_GUARD_TEST_MODE": "1"}):
             with self.assertRaises(BlockedUrlError):
-                check_url("https://127.0.0.1/")
+                check_url("https://127.0.0.2/")
 
     def test_direct_opener_disables_ambient_proxies(self):
         with mock.patch.dict(os.environ, {

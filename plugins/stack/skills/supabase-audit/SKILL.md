@@ -5,6 +5,8 @@ description: Audit a Supabase project — Row Level Security (RLS) policies, pub
 
 # Supabase Audit
 
+**AgentRoom proposal mode:** preserve raw audit evidence in the seat's declared direct artifact. Any tasks, decisions, handoff, stack update, or other target listed under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries; never edit that target. Only the memory steward merges, and missing seat/run identity stops the write.
+
 Supabase exposes your Postgres database directly through an auto-generated API — which is powerful and, without Row Level Security, catastrophic: a table with RLS off is readable and writable by anyone with the public anon key, which ships in your frontend. The overwhelming majority of Supabase data breaches are exactly this. So this audit leads with RLS and exposure, then covers auth, keys, storage, and database health, delegating the deep database and security mechanics to site-doctor.
 
 ## Setup

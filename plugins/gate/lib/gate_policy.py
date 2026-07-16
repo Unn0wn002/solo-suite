@@ -91,6 +91,26 @@ NA_ALLOWED = {
 assert not (set(NA_ALLOWED) & MANDATORY)
 assert set(NA_ALLOWED) | MANDATORY == CATEGORIES
 
+# One gate-evidence-v1 record executes one command for one category. That
+# proves only the captured command result; it cannot honestly prove every
+# independent launch control named by the reviewer. Keep this boundary
+# machine-readable so check_evidence.py and the public contract cannot imply
+# that 14/14 category records verify these controls. Each applicable item
+# needs separately cited evidence in the human launch review; absent evidence
+# is fail-closed (BLOCKED), not silently inherited from a category record.
+REVIEWER_REQUIRED_CONTROLS = {
+    "accessibility-core-flows": "blocking WCAG failures on core flows",
+    "authentication": "required authentication and session behavior",
+    "backup-restore": "a current backup plus a tested restore result",
+    "committed-secrets": "a dedicated repository secret scan",
+    "error-tracking": "live error capture and alert delivery",
+    "mobile-core-flows": "core flows at the required mobile breakpoints",
+    "payments": "the applicable payment flow and failure handling",
+    "rls-authorization": "live authorization/RLS behavior where applicable",
+    "rollback": "a tested rollback result, not only a written plan",
+    "transactional-email": "actual delivery behavior, not only DNS records",
+}
+
 EVIDENCE_DIR = ".solo/gate-evidence"
 RUN_STATE_DIR = ".solo/run-state"
 PROJECT_PROFILE_SOURCE = ".solo/project.md"

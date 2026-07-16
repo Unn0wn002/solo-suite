@@ -9,6 +9,8 @@ This skill builds the thing — turning specs and designs into working code acro
 
 ## Memory first, every time
 
+**AgentRoom proposal mode:** when the trusted seat contract lists a memory target under `proposes`, do not perform the direct update described below. Write the intended target and patch/entries to `.solo/proposals/<seat>-<run_id>.md`; only the memory steward may merge it. If the room does not supply both identifiers, stop rather than guessing. Outside a stewarded AgentRoom, update memory normally.
+
 Read `.solo/handoff.md` and `.solo/tasks.md` at the start; pull in `prd.md`, `architecture.md`, and `design.md` for whatever you're building (build to the design, not a fresh invention). As work progresses, **keep `tasks.md` live**: move the task to Doing when you start, to Done (with date) when acceptance criteria pass, to Blocked (with reason) if stuck. Append notable decisions/tradeoffs to `decisions.md`. This is how a solo dev survives context loss — the code and the memory move together.
 
 ## Match the codebase (before writing anything)

@@ -1,4 +1,4 @@
-"""Fail-closed tests for the v1.0.26 publication helpers.
+"""Fail-closed tests for the v1.0.27 publication helpers.
 
 The integration cases push only to disposable local bare repositories. They
 never contact a network remote and never mutate the developer's checkout.
@@ -18,8 +18,8 @@ import zipfile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RELEASE = os.path.join(REPO, "release")
-PREPARE = os.path.join(RELEASE, "prepare-release-branch-v1.0.26.ps1")
-TAG = os.path.join(RELEASE, "publish-approved-tag-v1.0.26.ps1")
+PREPARE = os.path.join(RELEASE, "prepare-release-branch-v1.0.27.ps1")
+TAG = os.path.join(RELEASE, "publish-approved-tag-v1.0.27.ps1")
 COMMON = os.path.join(RELEASE, "publish-common.ps1")
 WORKFLOW = os.path.join(REPO, ".github", "workflows", "ci.yml")
 
@@ -62,7 +62,7 @@ class PublishFixture:
         os.makedirs(self.candidate)
         os.makedirs(self.artifacts)
         self._write_tree(self.seed, "1.0.25", "old release\n")
-        self._write_tree(self.candidate, "1.0.26", "reviewed release\n")
+        self._write_tree(self.candidate, "1.0.27", "reviewed release\n")
 
         run(["git", "init", "--bare", "--initial-branch=main", self.remote])
         run(["git", "init", "--initial-branch=main", self.seed])
@@ -86,12 +86,12 @@ class PublishFixture:
         with open(os.path.join(root, "README.md"), "w", encoding="utf-8",
                   newline="\n") as fh:
             fh.write(readme)
-        if version == "1.0.26":
+        if version == "1.0.27":
             with open(os.path.join(root, "windows-crlf.txt"), "wb") as fh:
                 fh.write(b"line one\r\nline two\r\n")
 
     def _build_candidate_artifacts(self):
-        version = "1.0.26"
+        version = "1.0.27"
         top = "solo-suite-plugin-v" + version
         zip_name = top + ".zip"
         self.zip_path = os.path.join(self.artifacts, zip_name)
@@ -213,7 +213,7 @@ class ReleaseWorkflowPolicy(unittest.TestCase):
                       "w", encoding="utf-8", newline="\n") as fh:
                 json.dump({"release": "1.0.25"}, fh)
             env = os.environ.copy()
-            env["GITHUB_REF_NAME"] = "v1.0.26"
+            env["GITHUB_REF_NAME"] = "v1.0.27"
             selected = run(
                 [sys.executable, "-c", selector], cwd=repo, env=env)
             self.assertEqual(selected.stdout.strip(), "1.0.25")
@@ -470,11 +470,11 @@ class PublishScripts(unittest.TestCase):
         self.assertRegex(oid, r"^[0-9a-f]{40}$")
         remote_oid = run([
             "git", "ls-remote", self.fixture.remote,
-            "refs/heads/release/v1.0.26"]).stdout.split()[0]
+            "refs/heads/release/v1.0.27"]).stdout.split()[0]
         self.assertEqual(remote_oid, oid)
         blob = subprocess.run(
             ["git", "--git-dir", self.fixture.remote, "show",
-             "refs/heads/release/v1.0.26:windows-crlf.txt"],
+             "refs/heads/release/v1.0.27:windows-crlf.txt"],
             capture_output=True, timeout=30, check=True).stdout
         self.assertEqual(blob, b"line one\r\nline two\r\n")
         return oid
@@ -490,7 +490,7 @@ class PublishScripts(unittest.TestCase):
         self.assertIn("already exists", again.stdout + again.stderr)
         self.assertEqual(
             run(["git", "ls-remote", self.fixture.remote,
-                 "refs/heads/release/v1.0.26"]).stdout.split()[0], oid)
+                 "refs/heads/release/v1.0.27"]).stdout.split()[0], oid)
 
     def test_prepare_wrong_expected_head_aborts_without_branch(self):
         wrong = "0" * 40
@@ -498,7 +498,7 @@ class PublishScripts(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("Remote HEAD mismatch", result.stdout + result.stderr)
         refs = run(["git", "ls-remote", self.fixture.remote,
-                    "refs/heads/release/v1.0.26"]).stdout
+                    "refs/heads/release/v1.0.27"]).stdout
         self.assertEqual(refs.strip(), "")
 
     def test_prepare_rejects_dirty_or_unverified_provenance(self):
@@ -517,7 +517,7 @@ class PublishScripts(unittest.TestCase):
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(expected, result.stdout + result.stderr)
             refs = run(["git", "ls-remote", self.fixture.remote,
-                        "refs/heads/release/v1.0.26"]).stdout
+                        "refs/heads/release/v1.0.27"]).stdout
             self.assertEqual(refs.strip(), "")
 
     def test_tag_requires_exact_approved_oid_and_refuses_existing_tag(self):
@@ -529,7 +529,7 @@ class PublishScripts(unittest.TestCase):
         self.assertNotEqual(wrong.returncode, 0)
         self.assertIn("review branch", wrong.stdout + wrong.stderr)
         self.assertEqual(run(["git", "ls-remote", self.fixture.remote,
-                              "refs/tags/v1.0.26"]).stdout.strip(), "")
+                              "refs/tags/v1.0.27"]).stdout.strip(), "")
 
         approved = self.prepare_successfully()
         result = self.invoke(TAG, [
@@ -539,7 +539,7 @@ class PublishScripts(unittest.TestCase):
         ])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         peeled = run(["git", "ls-remote", self.fixture.remote,
-                      "refs/tags/v1.0.26^{}"]).stdout.split()[0]
+                      "refs/tags/v1.0.27^{}"]).stdout.split()[0]
         self.assertEqual(peeled, approved)
 
         again = self.invoke(TAG, [
@@ -610,7 +610,7 @@ class PublishScripts(unittest.TestCase):
         command = (
             ". '%s'; Expand-AndVerifyReleasePackage -ReleaseZip '%s' "
             "-Sha256Sums '%s' -ProvenanceFile '%s' -Destination '%s' "
-            "-Version '1.0.26' -MaxExpandedBytes 1"
+            "-Version '1.0.27' -MaxExpandedBytes 1"
             % tuple(map(quote, (COMMON, self.fixture.zip_path,
                                 self.fixture.sums_path,
                                 self.fixture.provenance_path, destination))))

@@ -5,6 +5,8 @@ description: Ask a solo developer what tools their project actually uses — hos
 
 # Stack Advisor
 
+**AgentRoom proposal mode:** when the trusted seat declares `.solo/stack.md`, `.solo/decisions.md`, or another target under `proposes`, put the target and idempotent proposed patch in `.solo/proposals/<seat>-<run_id>.md` instead of editing the target. Only the memory steward merges; missing seat/run identity is a stop condition. Single-agent intake keeps direct updates.
+
 The fastest way to give bad advice is to audit or build without knowing what the project runs on — recommending an S3 lifecycle rule to someone on Cloudinary, or a generic "add a WAF" to someone already behind Cloudflare. This skill fixes that once: it asks what the stack is and writes it to `.solo/stack.md`, which every other command in the suite reads for context. **Run it first.** Ten questions up front make every later audit sharper and every build fit the real tools.
 
 ## When to run

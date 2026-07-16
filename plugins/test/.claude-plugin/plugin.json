@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "test",
   "displayName": "solo-suite test",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Testing for solo developers: unit, integration, e2e, and edge-case hunting. QA-engineer skill that tests against PRD acceptance criteria and keeps the test pyramid balanced.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

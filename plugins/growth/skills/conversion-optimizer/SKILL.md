@@ -5,6 +5,8 @@ description: Audit the conversion funnel and find where users drop off and why â
 
 # Conversion Optimizer
 
+**AgentRoom proposal mode:** when `.solo/tasks.md` or another target is declared under the trusted seat's `proposes`, write the prioritized fixes to `.solo/proposals/<seat>-<run_id>.md` with the intended target, not to the target itself. Only the memory steward merges; stop if seat/run identity is missing. Single-agent runs keep direct memory updates.
+
 Traffic without conversion is a leak. This skill finds the leaks and prioritizes fixes by impact â€” grounded in evidence, not opinion. It states assumptions rather than inventing numbers, and it isn't financial advice.
 
 ## What it does

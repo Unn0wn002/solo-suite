@@ -6,10 +6,12 @@
 - **Evidence over claims**: README/marketplace counts and workflow claims are
   validated by `self_check.py` and `tests/test_inventory.py`; if you change
   reality, change the claims in the same commit.
-- **Safety contracts are not optional**: anything that can write externally,
-  mutate production, migrate data, submit forms, or touch secrets is
-  `disable-model-invocation: true` and confirms before acting. New commands
-  in those categories must follow `SECURITY.md`.
+- **Safety contracts are not optional**: commands that can write externally,
+  mutate production, migrate data, submit forms, or touch secrets use
+  `disable-model-invocation: true` and confirm before acting. Skills keep the
+  exact two-key frontmatter contract and repeat the manual execution boundary
+  in their body, so loading a skill for planning never authorizes an action.
+  New commands and skills in those categories must follow `SECURITY.md`.
 - Windows, macOS, and Linux all matter: use `${CLAUDE_PLUGIN_ROOT}` for
   helper paths, forward-slash-normalize glob output, and keep the test suite
   green on ubuntu-latest and windows-latest.
@@ -20,9 +22,9 @@
   displayName, version, license, repository, homepage required)
 - `plugins/<name>/commands/*.md` — slash commands (frontmatter: description,
   argument-hint, optional disable-model-invocation)
-- `plugins/<name>/skills/<skill>/SKILL.md` — skills (official frontmatter
-  keys only: name, description, argument-hint, disable-model-invocation,
-  user-invocable, allowed-tools, model)
+- `plugins/<name>/skills/<skill>/SKILL.md` — skills (frontmatter is exactly
+  `name` plus `description`; execution safety belongs in the body and in the
+  user-facing command's `disable-model-invocation` flag)
 - `plugins/ai/skills/agent-room-templates/` — AgentRooms schema, validator,
   templates; `plugins/ai/agents/` — room agent definitions
 - `tests/` — offline stdlib unittest suite (loopback fixtures only)
@@ -84,18 +86,18 @@ writes use the separate short-lived workflow token. The workflow never changes
 repository settings. A missing secret, disabled immutable-release setting, or
 nonconforming tag ruleset blocks the release.
 
-For v1.0.26, publish in two reviewed stages from PowerShell. Supply the remote
+For v1.0.27, publish in two reviewed stages from PowerShell. Supply the remote
 HEAD OID you independently checked; the first helper refuses a changed remote,
 verifies the complete candidate inventory/provenance, and pushes only
-`release/v1.0.26` (never `main`):
+`release/v1.0.27` (never `main`):
 
 ```powershell
 $remote = "https://github.com/unn0wn002/solo-suite.git"
 $expectedRemoteHead = "<reviewed 40-hex remote HEAD OID>"
-$result = & .\release\prepare-release-branch-v1.0.26.ps1 `
+$result = & .\release\prepare-release-branch-v1.0.27.ps1 `
   -RemoteUrl $remote `
   -ExpectedRemoteHead $expectedRemoteHead `
-  -ReleaseZip .\dist\solo-suite-plugin-v1.0.26.zip `
+  -ReleaseZip .\dist\solo-suite-plugin-v1.0.27.zip `
   -Sha256Sums .\dist\SHA256SUMS `
   -Provenance .\dist\provenance.json
 $result
@@ -106,12 +108,12 @@ Review the pushed branch and its PR. Only after approving the exact
 second helper:
 
 ```powershell
-& .\release\publish-approved-tag-v1.0.26.ps1 `
+& .\release\publish-approved-tag-v1.0.27.ps1 `
   -RemoteUrl $remote `
   -ApprovedCommitOid "<approved 40-hex OID>"
 ```
 
-That helper requires `release/v1.0.26` still to equal the approved OID and
+That helper requires `release/v1.0.27` still to equal the approved OID and
 refuses an existing tag. The tag triggers the canonical CI rebuild; the local
 candidate is not the canonical published artifact. Neither helper merges or
 pushes `main`.

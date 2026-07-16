@@ -1,7 +1,7 @@
 {
   "schema": "solo-suite/agentroom-v1",
   "name": "production-release",
-  "version": 4,
+  "version": 5,
   "description": "Preflight + plans + monitoring -> deploy gate -> docs -> ORCHESTRATOR FREEZE (structured evidence.freeze contract) -> evidence finalizer -> OUTPUT-ONLY launch gate. Sequential room; each seat declares its real shared-memory writes. Earlier-phase artifacts it does not produce are explicit, documented assumptions.",
   "memory_dir": ".solo/",
   "run": {
@@ -11,7 +11,7 @@
   "rules": [
     "sequential stages — one seat active at a time, all shared-memory writes declared",
     "nothing ships while /gate:before-deploy is NO-GO or /gate:production-ready is BLOCKED",
-    "EVIDENCE LIFECYCLE: specialists produce raw artifacts and N/A candidates only — NO seat writes .solo/gate-evidence/ records mid-flow. After the docs stage the ORCHESTRATOR performs the structured freeze (evidence.freeze): commits every tracked release/docs/project-memory change, verifies a clean tree, and records FINAL_SHA with the gate plugin's update_run_state.py helper (run-state-v1 contract — SHA derived from git rev-parse HEAD by the helper, monotonic transitions, final_sha frozen once set) in untracked .solo/run-state/<run_id>.json. Only the evidence_finalizer mints all 14 records at FINAL_SHA via /gate:finalize-evidence (verified through record_evidence.py, or matrix-permitted N/A); the gatekeeper verifies the FULL set with check_evidence.py (exactly one accepted record per category, recomputed digests, stale/foreign records rejected) and is OUTPUT-ONLY — zero tracked writes after the freeze",
+    "EVIDENCE LIFECYCLE: specialists produce raw artifacts and N/A candidates only — NO seat writes .solo/gate-evidence/ records mid-flow. After the docs stage the ORCHESTRATOR performs the structured freeze (evidence.freeze): commits every tracked release/docs/project-memory change, verifies a clean tree, and records FINAL_SHA with the gate plugin's update_run_state.py helper in untracked .solo/run-state/<run_id>.json. The evidence_finalizer coordinator prepares and verifies the preview, then PAUSES: only the user may confirm and invoke the manual-only /gate:finalize-evidence command. The coordinator resumes only to verify all 14 records at FINAL_SHA; the gatekeeper then verifies the FULL set with check_evidence.py and remains OUTPUT-ONLY",
     "vendor-specific checks run only for providers recorded in .solo/stack.md"
   ],
   "stages": [
@@ -51,6 +51,7 @@
     ".solo/tasks.md": "accumulated across earlier phases",
     ".solo/risks.md": "produced by the security phase of an earlier room/session",
     ".solo/project.md": "project profile recorded by an earlier intake session; read by the finalizer (N/A matrix) and never produced by this room",
+    ".solo/stack.md": "canonical stack and connector context recorded by an earlier intake session; read by finalization and launch-gate checks",
     ".solo/env-contract.md": "produced by the contracts phase of an earlier room/session; read by the release seat",
     ".solo/api-contract.md": "produced by the contracts phase of an earlier room/session; read by the docs seat"
   },
@@ -81,7 +82,7 @@
         "/site-doctor:monitoring",
         "/gate:before-deploy"
       ],
-      "deliverable": "Preflight + deploy/rollback plans in release.md, monitoring recorded, before-deploy gate GO — raw artifacts only; NO gate-evidence records (the evidence finalizer mints all 14 at FINAL_SHA)",
+      "deliverable": "Preflight + deploy/rollback plans in release.md, monitoring recorded, before-deploy gate GO — raw artifacts only; NO gate-evidence records (the user-invoked finalization command creates all 14 at FINAL_SHA while the coordinator only verifies)",
       "handoff_to": "docs",
       "handoff_check": "/ai:handoff-check"
     },
@@ -115,6 +116,7 @@
       "reads": [
         ".solo/handoff.md",
         ".solo/project.md",
+        ".solo/stack.md",
         ".solo/run-state/<run_id>.json"
       ],
       "writes": [
@@ -133,11 +135,16 @@
         ".solo/gate-evidence/monitoring.json",
         ".solo/gate-evidence/documentation.json"
       ],
-      "agent_note": "mechanical re-execution of every category command at FINAL_SHA via record_evidence.py — a disciplined executor, not a persona; runs /gate:finalize-evidence and nothing else",
-      "commands": [
-        "/gate:finalize-evidence"
-      ],
-      "deliverable": "Verifies HEAD equals the FINAL_SHA recorded in UNTRACKED .solo/run-state/<run_id>.json (run-state-v1, written by update_run_state.py; verified mechanically with `update_run_state.py verify final`) by the orchestrator's freeze (never a tracked file), then produces ALL 14 gate-evidence records against it (verified via record_evidence.py, or matrix-permitted N/A via record_evidence.py --not-applicable) — no record exists from any earlier, intermediate commit; refuses to change anything tracked",
+      "agent_note": "coordination-only seat: prepares and verifies the preview, pauses for the user to invoke the manual-only command, then verifies the resulting records; it never invokes /gate:finalize-evidence itself",
+      "commands": [],
+      "human_handoff": {
+        "command": "/gate:finalize-evidence",
+        "executor": "user",
+        "preview_required": true,
+        "confirmation_required": true,
+        "resume_on": "the user reports successful command completion and the coordinator verifies all 14 records at FINAL_SHA"
+      },
+      "deliverable": "Reads FINAL_SHA from untracked .solo/run-state/<run_id>.json, verifies HEAD equals it, and prepares the exact user handoff inputs; pauses while the user invokes /gate:finalize-evidence, reviews the command-generated preview, and explicitly confirms execution, then verifies all 14 resulting records and hands off only on success; the coordinator never invokes the manual-only command or changes tracked files",
       "handoff_to": "gatekeeper",
       "handoff_check": "/ai:handoff-check",
       "agent": "room-evidence-finalizer"
@@ -147,6 +154,8 @@
       "role": "Production Gatekeeper",
       "model_hint": "deep-reasoning",
       "reads": [
+        ".solo/project.md",
+        ".solo/stack.md",
         ".solo/architecture.md",
         ".solo/bugs.md",
         ".solo/data-contract.md",
@@ -174,6 +183,8 @@
   ],
   "exit_gate": "/gate:production-ready",
   "gate_requires": [
+    ".solo/project.md",
+    ".solo/stack.md",
     ".solo/architecture.md",
     ".solo/bugs.md",
     ".solo/data-contract.md",

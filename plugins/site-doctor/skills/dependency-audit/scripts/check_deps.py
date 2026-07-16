@@ -49,10 +49,12 @@ def pin_kind(spec):
         return "tilde (~) — allows patch"
     if s.startswith(("git", "http", "file:", "link:", "workspace:")):
         return "non-registry"
+    if s.startswith("=") and EXACT_VERSION.match(s[1:]):
+        return "exact (=)"
     if EXACT_VERSION.match(s):
         return "exact"
     if re.match(r"^v?\d", s):
-        return "range (starts with a digit but is not a full pin)"
+        return "range"
     return "range"
 
 
@@ -118,6 +120,21 @@ def analyze_python(root, report):
         return
     report.append("=== Python ===")
     report.append(f"  Dependency files: {', '.join(files)}")
+
+    # A metadata-only pyproject is a recognized Python project but declares no
+    # dependency surface to audit.  Do not mark its vulnerability status as
+    # unverified merely because no dependencies exist.
+    if files == ["pyproject.toml"]:
+        try:
+            with open(find(root, "pyproject.toml"), encoding="utf-8") as f:
+                pyproject_text = f.read().lower()
+        except Exception:
+            pyproject_text = ""
+        if not any(marker in pyproject_text for marker in (
+                "dependencies", "optional-dependencies", "requires =")):
+            report.append("  No dependency declarations found.")
+            report.append("")
+            return
 
     req = find(root, "requirements.txt")
     if req:

@@ -26,13 +26,19 @@ in principle rebind between our check and the connection (TOCTOU). This is an
 operator-run audit tool, not a multi-tenant proxy — do not reuse this module
 as a security boundary for untrusted callers.
 
-Test seam: private fixture addresses can be admitted only through the explicit
-``extra_allowed`` function argument. Environment variables cannot weaken the
-policy. Ambient HTTP(S) proxy variables are also ignored so a caller's process
-environment cannot redirect guarded requests outside the validated route.
+Test seam: the loopback fixture addresses 127.0.0.1 and ::1 can be admitted
+only when *both* ``URL_GUARD_TEST_MODE=1`` and
+``URL_GUARD_EXTRA_ALLOWED=<loopback>`` are present. Either variable by itself
+is ignored with a RuntimeWarning, and the environment seam never admits a
+non-loopback address. In-process tests should still prefer dependency
+injection through ``extra_allowed``. Ambient HTTP(S) proxy variables are also
+ignored so a caller's process environment cannot redirect guarded requests
+outside the validated route.
 """
 import ipaddress
+import os
 import socket
+import warnings
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -52,6 +58,8 @@ _EXPLICIT_BLOCKED = [ipaddress.ip_network(n) for n in (
 )]
 _BLOCKED_HOSTS = {"localhost", "metadata", "metadata.google.internal", "wpad"}
 _BLOCKED_HOST_SUFFIXES = (".localhost", ".local", ".internal")
+_TEST_LOOPBACKS = frozenset((ipaddress.ip_address("127.0.0.1"),
+                             ipaddress.ip_address("::1")))
 
 SafeResponse = namedtuple("SafeResponse",
                           "status headers body url hops truncated")
@@ -64,6 +72,44 @@ class BlockedUrlError(ValueError):
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None  # 3xx surfaces as HTTPError; safe_get validates each hop
+
+
+def _env_test_loopbacks():
+    """Return an explicitly enabled, loopback-only fixture allowlist.
+
+    Requiring two independently named variables prevents one stray ambient
+    setting from weakening the guard. The seam is intentionally incapable of
+    admitting RFC1918, link-local, metadata, or any other non-loopback target.
+    """
+    mode = os.environ.get("URL_GUARD_TEST_MODE")
+    raw = os.environ.get("URL_GUARD_EXTRA_ALLOWED")
+    if mode is None and raw is None:
+        return set()
+    if mode != "1" or not raw:
+        warnings.warn(
+            "loopback fixture access requires both URL_GUARD_TEST_MODE=1 "
+            "and URL_GUARD_EXTRA_ALLOWED; incomplete test seam ignored",
+            RuntimeWarning, stacklevel=3)
+        return set()
+
+    out = set()
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            address = ipaddress.ip_address(part)
+        except ValueError:
+            warnings.warn("invalid URL_GUARD_EXTRA_ALLOWED address %r ignored"
+                          % part, RuntimeWarning, stacklevel=3)
+            continue
+        if address not in _TEST_LOOPBACKS:
+            warnings.warn(
+                "URL_GUARD_EXTRA_ALLOWED admits loopback fixtures only; %s ignored"
+                % address, RuntimeWarning, stacklevel=3)
+            continue
+        out.add(address)
+    return out
 
 
 def _ip_block_reason(ip):
@@ -111,7 +157,7 @@ def check_url(url, allow_http=False, extra_allowed=()):
     if host in _BLOCKED_HOSTS or host.endswith(_BLOCKED_HOST_SUFFIXES):
         raise BlockedUrlError("hostname %r is a blocked internal/metadata name" % host)
 
-    allow = set()
+    allow = _env_test_loopbacks()
     for a in extra_allowed:
         try:
             allow.add(ipaddress.ip_address(a) if isinstance(a, str) else a)

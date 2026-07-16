@@ -41,9 +41,22 @@ For each stage in order:
    Seats sharing a stage may run as parallel subagent tasks **only** because
    the schema guarantees disjoint writes (distinct artifacts, distinct
    workspaces/worktrees, proposals for shared memory).
+   Every seat with `proposes` returns a structured proposal payload containing
+   the target, proposed patch/entries, evidence, and merge notes. A seat whose
+   least-privilege tool allowlist includes Write may persist the payload at
+   `.solo/proposals/<seat>-<run_id>.md`; for a read-only/output-only seat, the
+   trusted runner writes that exact returned payload to the same path before
+   invoking the steward. The runner must not infer, rewrite, or add content on
+   the seat's behalf. Missing seat/run identity or a missing payload stops the
+   stage rather than silently dropping the proposal.
 2. After the stage, invoke `room-memory-steward` (in stewarded rooms) to
    merge `.solo/proposals/*` into tasks/decisions/handoff and allocate
-   T-IDs — but ONLY through the stage named by
+   T-IDs. **Worktree build-stage exception:** builder proposals exist only in
+   their committed `.solo/proposals/<seat>-<run_id>.json` payloads; do not copy
+   them or run the steward against the parent checkout yet. First run the
+   declared integration stage, merge the exact payload SHAs, then let the
+   steward consume those transported proposal files. In every case, run the
+   steward ONLY through the stage named by
    `memory_steward.active_through_stage` (e.g. `"docs"`). The runner MUST
    NOT invoke the steward at or after the finalize stage: its last merge
    lands before the freeze commit, and validate_rooms.py rejects rooms
@@ -54,9 +67,13 @@ For each stage in order:
    exhaustion follow `on_max_iterations`.
 
 The human stays in the loop at every gate and for every manual-only command
-(state-changing browser tests, external sync, fixes/migrations). A manual-only
-command is returned to the human with its required authorization and safety
-inputs; the runner never invokes it through an agent.
+(state-changing browser tests, external sync, fixes/migrations, and evidence
+finalization). `validate_rooms.py` rejects a manual-only command in a seat's
+`commands`. When a seat has structured `human_handoff`, the runner presents the
+exact command and required inputs, PAUSES, and resumes only when the declared
+`resume_on` condition is proved. `preview_required` and
+`confirmation_required` are two distinct user actions: never chain preview
+into execution, infer approval, or invoke the command through an agent.
 
 ## Worktree rooms — the execution contract (mandatory)
 
@@ -102,7 +119,7 @@ pinning the base silently builds on stale code.
    runtime-state file (`.solo/run-state/<run_id>.json`).
 5. **Everyone verifies the SHA their band actually has.** Every seat in
    `worktrees.verify_at_integration_sha` (review, QA, browser QA, security,
-   site doctor, AI reviewer, git manager, devops, release manager, docs)
+   site doctor, growth, AI reviewer, git manager, devops, release manager, docs)
    proves `git rev-parse HEAD == INTEGRATION_SHA` (and the target
    environment) before doing any work. The seats in
    `worktrees.verify_at_final_sha` (evidence finalizer, gatekeeper) run
@@ -130,14 +147,15 @@ pinning the base silently builds on stale code.
    validates the result against run-state-v1 — into the untracked
    runtime-state file (`freeze.stored_in` ==
    `evidence.final_sha_recorded_in`, `.solo/run-state/<run_id>.json`) —
-   NEVER a tracked file. The room's `evidence.finalizer` seat (the
-   shipped `room-evidence-finalizer` agent, running
-   `/gate:finalize-evidence`) verifies HEAD == FINAL_SHA mechanically
-   (`update_run_state.py … verify final` exits 0), re-runs every
-   applicable category command through `record_evidence.py`, and mints
-   all 14 records (verified, or matrix-permitted N/A through the
-   recorder's trusted `--not-applicable` operation) against that exact
-   commit. After the freeze
+   NEVER a tracked file. The room's `evidence.finalizer` seat is the shipped
+   `room-evidence-finalizer` **coordinator** with `commands: []`. It verifies
+   HEAD == FINAL_SHA mechanically, prepares the exact structured
+   `human_handoff`, and PAUSES. Only the user invokes manual-only
+   `/gate:finalize-evidence`; that command produces the complete preview, waits
+   for a separate explicit confirmation, and then mints all 14 records. The
+   coordinator resumes only to re-verify FINAL_SHA and the complete evidence
+   set with `check_evidence.py`; it never invokes the command or authors a
+   record. After the freeze
    NOTHING tracked changes — only untracked `.solo/gate-evidence/` and
    `.solo/run-state/` files are created (gitignore both; the recorder and
    checker refuse tracked runtime state, and the recorder re-checks
@@ -146,7 +164,9 @@ pinning the base silently builds on stale code.
    (`memory_steward.active_through_stage`). The records are self-attested
    local evidence, not cryptographic attestations.
 7. **Bug-fix rooms pin the fixer's commit.** The REPRODUCER runs first,
-   before any fixer exists: it verifies and records BASE_SHA only, and
+   before any fixer exists: after committing the repro it records BASE_SHA only
+   through `update_run_state.py --root . --run-id <run_id> advance base` (the
+   helper derives HEAD; no seat types or directly edits a SHA), and
    never requests a fixer commit. Only the VERIFIER, later, checks out
    the fixer's returned `commit_sha` (`checkout-exact-sha` mode) and
    records `git rev-parse HEAD` in `.solo/tests.md` before running the

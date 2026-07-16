@@ -5,6 +5,8 @@ description: Defensive, static-first application security review going beyond he
 
 # Security Review
 
+**AgentRoom proposal mode:** write security evidence only to declared direct targets. Tasks, decisions, handoff, or another target under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md`, never the target. Only the memory steward merges; missing seat/run identity is a stop condition.
+
 This is a defensive code and configuration review, not a checklist skim.
 Findings must be evidence-specific: name the file/line or configuration, show
 the unsafe data flow or missing control, explain impact, and give the fix.

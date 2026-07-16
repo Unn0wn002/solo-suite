@@ -9,6 +9,8 @@ A solo developer has no one to catch the bug they can't see, the security hole t
 
 ## Memory & context first
 
+**AgentRoom proposal mode:** when the trusted seat contract lists a memory target under `proposes`, put the proposed target and patch/entries in `.solo/proposals/<seat>-<run_id>.md` instead of editing the target. Only the memory steward merges it; missing seat/run identity is a stop condition. Normal single-agent runs keep direct memory updates.
+
 Read the change in context: what task/feature is this (check `.solo/tasks.md`), what are the acceptance criteria (`prd.md`), and does it fit the architecture and design? Review against the codebase's own conventions (read nearby code), not abstract ideals. Prefer reviewing an actual diff; if given a whole file, focus on what matters most.
 
 ## What to review (in priority order)

@@ -233,7 +233,11 @@ class NarrativeCountDrift(unittest.TestCase):
         self.assertEqual(len(self.agents), 24)
         self.assertEqual(len(self.staged), 21)
         self.assertEqual(len(self.ft["seats"]), 22)
-        self.assertEqual(len(self.stages), 14)
+        self.assertEqual(len(self.stages), 15)
+        self.assertLess(self.stages.index("review"),
+                        self.stages.index("ai-review"))
+        self.assertLess(self.stages.index("ai-review"),
+                        self.stages.index("qa"))
         self.assertIn("finalize", self.stages)
 
     def test_readme_agent_count_matches_filesystem(self):
@@ -417,6 +421,28 @@ class CountBearingDescriptions(unittest.TestCase):
         m = re.search(r"(\d+) room-\* agent", desc)
         self.assertIsNotNone(m, "ai plugin.json lost its agent-count claim")
         self.assertEqual(int(m.group(1)), agents)
+
+
+class LaunchControlScope(unittest.TestCase):
+    """A complete category set must never be sold as subcontrol proof."""
+
+    def test_public_launch_contract_states_machine_boundary_and_fail_closed(self):
+        paths = (
+            os.path.join(REPO, "plugins", "gate", "commands",
+                         "production-ready.md"),
+            os.path.join(REPO, "plugins", "gate", "skills",
+                         "production-readiness-reviewer", "SKILL.md"),
+        )
+        required = ("error tracking", "mobile", "accessibility", "payments",
+                    "transactional email", "backup", "rollback")
+        for path in paths:
+            with io.open(path, encoding="utf-8") as stream:
+                text = stream.read().lower()
+            self.assertIn("necessary but not sufficient", text, path)
+            self.assertIn("separate evidence", text, path)
+            self.assertIn("blocked", text, path)
+            for control in required:
+                self.assertIn(control, text, "%s: %s" % (path, control))
 
 
 class EvidenceTrustLanguage(unittest.TestCase):

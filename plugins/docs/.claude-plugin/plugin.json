@@ -2,7 +2,7 @@
   "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
   "name": "docs",
   "displayName": "solo-suite docs",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Documentation for solo developers: README/docs upkeep, API docs, and a followable setup guide. Documentation-writer skill that keeps docs matched to code reality. Commands: /docs:update, /docs:api, /docs:setup-guide, /docs:runbook.",
   "author": {
     "name": "Sakura Yukihira (Ayaya)",

@@ -5,6 +5,8 @@ description: Audit a payment integration — Stripe, PayPal, Xendit, Midtrans, o
 
 # Payments Audit
 
+**AgentRoom proposal mode:** preserve raw audit evidence in the seat's declared direct artifact. Any tasks, decisions, handoff, stack update, or other target listed under `proposes` goes to `.solo/proposals/<seat>-<run_id>.md` with its target and proposed entries; never edit that target. Only the memory steward merges, and missing seat/run identity stops the write.
+
 Payments is the code path where bugs cost real money in both directions — double charges that burn customer trust, an unverified webhook that lets anyone mark an order "paid," a leaked secret key that lets anyone move funds, or a live key in staging quietly charging real cards during tests. This skill audits the payment integration end to end: keys and environments, webhooks, state handling, duplicates, refunds, and the checkout surface. The failure modes are the same across providers (Stripe, PayPal, Xendit, Midtrans, and similar), so the checklist is provider-aware but vendor-neutral.
 
 ## Setup
